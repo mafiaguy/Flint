@@ -5,23 +5,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FLINT — Spark Your Next Move</title>
 <meta name="description" content="Zero-config AI job search. 9 sources, AI matching, one-click apply. Free and open source.">
-<meta property="og:title" content="FLINT — Spark Your Next Move">
-<meta property="og:description" content="AI-powered job search across LinkedIn, Greenhouse, Lever, Adzuna & 5 more sources. Completely free.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
-
 <script>
-  // Injected by GitHub Actions at deploy time from secrets
   window.FLINT_CONFIG = {
     SUPABASE_URL: "__SUPABASE_URL__",
     SUPABASE_KEY: "__SUPABASE_KEY__",
   };
 </script>
-
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.2/babel.min.js"></script>
-
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;background:#08080c;color:#eeeef2;-webkit-font-smoothing:antialiased}
@@ -32,7 +26,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
 @keyframes spin{to{transform:rotate(360deg)}}
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 input,textarea,select{font-family:inherit;color:#eeeef2;background:#0e0e14;border:1px solid #1c1c2a;border-radius:8px;padding:10px 14px;font-size:14px;outline:none;width:100%;box-sizing:border-box;caret-color:#f59e0b}
 input::placeholder,textarea::placeholder{color:#4e4e5a}
 input:focus,textarea:focus{border-color:rgba(245,158,11,.3)}
@@ -41,870 +34,212 @@ a{color:#3b82f6;text-decoration:none}
 </head>
 <body>
 <div id="root"></div>
-
 <script type="text/babel" data-type="module">
-const {useState,useEffect,useCallback} = React;
+const {useState,useEffect} = React;
 const CFG = window.FLINT_CONFIG || {};
 const M = "'SF Mono','JetBrains Mono','Fira Code',monospace";
 const C = {bg:"#08080c",c1:"#0e0e14",c2:"#15151e",br:"#1c1c2a",t1:"#eeeef2",t2:"#8e8e9a",t3:"#4e4e5a",acc:"#f59e0b",red:"#ef4444",grn:"#22c55e",blu:"#3b82f6",pur:"#a78bfa",grad:"linear-gradient(135deg,#f59e0b,#ef4444,#ec4899)"};
 const FLAGS={in:"🇮🇳",gb:"🇬🇧",de:"🇩🇪",fr:"🇫🇷",us:"🇺🇸",ca:"🇨🇦",au:"🇦🇺",ie:"🇮🇪",remote:"🌍",other:"🌐"};
-const CATS=["All","SRE","Platform","Security","DevSecOps","Infrastructure","DevOps","Cloud"];
+const CATS=["All","SRE","Platform","Security","DevSecOps","DevOps","Cloud","Infrastructure","Backend","Frontend","Fullstack","Data","ML/AI","Mobile","QA","Product","Architect"];
 const QUICK=["Site Reliability Engineer","Platform Engineer","Cloud Security","DevSecOps","DevOps","Infrastructure"];
+const sb = window.supabase.createClient(CFG.SUPABASE_URL||"",CFG.SUPABASE_KEY||"");
 
-// ── Supabase client ──
-const supabase = window.supabase.createClient(CFG.SUPABASE_URL || "", CFG.SUPABASE_KEY || "");
-
-// ── DB helpers (all user-scoped via RLS) ──
 const db = {
-  async getJobs(search,cat,limit=80) {
-    let q = supabase.from("jobs").select("*").order("posted",{ascending:false}).limit(limit);
-    if(search) q = q.or(`title.ilike.%${search}%,company.ilike.%${search}%,description.ilike.%${search}%`);
-    if(cat && cat!=="All") q = q.eq("category",cat);
-    const {data} = await q;
-    return data || [];
-  },
-  async getProfile() {
-    const {data:{user}} = await supabase.auth.getUser();
-    if(!user) return null;
-    const {data} = await supabase.from("profiles").select("*").eq("id",user.id).single();
-    return data;
-  },
-  async saveProfile(profile) {
-    const {data:{user}} = await supabase.auth.getUser();
-    if(!user) return;
-    await supabase.from("profiles").upsert({id:user.id,...profile,updated_at:new Date().toISOString()});
-  },
-  async getQA() {
-    const {data} = await supabase.from("saved_qa").select("*").order("created_at");
-    return data || [];
-  },
-  async addQA(question,answer) {
-    const {data:{user}} = await supabase.auth.getUser();
-    if(!user) return;
-    await supabase.from("saved_qa").insert({user_id:user.id,question,answer});
-  },
-  async deleteQA(id) {
-    await supabase.from("saved_qa").delete().eq("id",id);
-  },
-  async getApplications() {
-    const {data} = await supabase.from("applications").select("*").order("applied_at",{ascending:false});
-    return data || [];
-  },
-  async uploadResume(file) {
-    const {data:{user}} = await supabase.auth.getUser();
-    if(!user || !file) return null;
-    const filePath = `${user.id}/${file.name}`;
-    const {data,error} = await supabase.storage.from("resumes").upload(filePath, file, {upsert:true});
-    if(error) { console.error("Upload error:",error); return null; }
-    const {data:urlData} = supabase.storage.from("resumes").getPublicUrl(filePath);
-    // Save URL to profile
-    await supabase.from("profiles").update({resume_url: urlData.publicUrl}).eq("id",user.id);
-    return urlData.publicUrl;
-  },
-  async queueApply(job, coverLetter, answers) {
-    const {data:{user}} = await supabase.auth.getUser();
-    if(!user) return null;
-    const profile = await this.getProfile();
-    // Parse Greenhouse board slug + job ID from URL
-    let boardSlug = null, ghJobId = null;
-    const ghMatch = (job.url||"").match(/boards\.greenhouse\.io\/(\w+)\/jobs\/(\d+)/);
-    if(ghMatch) { boardSlug = ghMatch[1]; ghJobId = ghMatch[2]; }
-    return supabase.from("apply_queue").insert({
-      user_id: user.id,
-      job_id: job.id,
-      job_title: job.title,
-      company: job.company,
-      job_url: job.url,
-      source: job.source,
-      board_slug: boardSlug,
-      gh_job_id: ghJobId,
-      cover_letter: coverLetter,
-      answers: answers || {},
-      resume_url: profile?.resume_url || null,
-      status: "pending",
-    });
-  },
-  async getApplyQueue() {
-    const {data} = await supabase.from("apply_queue").select("*").order("created_at",{ascending:false});
-    return data || [];
-  },
-  async scrapeForm(url, source) {
-    try {
-      const r = await fetch(`${CFG.SUPABASE_URL}/functions/v1/scrape-form`,{
-        method:"POST",
-        headers:{Authorization:`Bearer ${CFG.SUPABASE_KEY}`,"Content-Type":"application/json"},
-        body:JSON.stringify({url, source})
-      });
-      return r.ok ? await r.json() : null;
-    } catch { return null; }
-  },
-  async triggerApply() {
-    try {
-      const r = await fetch(`${CFG.SUPABASE_URL}/functions/v1/trigger-apply`,{
-        method:"POST",
-        headers:{Authorization:`Bearer ${CFG.SUPABASE_KEY}`,"Content-Type":"application/json"},
-        body:JSON.stringify({})
-      });
-      return r.ok ? await r.json() : null;
-    } catch { return null; }
-  },
-  async callAI(body) {
-    try {
-      const r = await fetch(`${CFG.SUPABASE_URL}/functions/v1/ai`,{
-        method:"POST",
-        headers:{Authorization:`Bearer ${CFG.SUPABASE_KEY}`,"Content-Type":"application/json"},
-        body:JSON.stringify(body)
-      });
-      return r.ok ? await r.json() : null;
-    } catch { return null; }
-  },
-  async liveSearch(query) {
-    try {
-      const r = await fetch(`${CFG.SUPABASE_URL}/functions/v1/search-jobs`,{
-        method:"POST",
-        headers:{Authorization:`Bearer ${CFG.SUPABASE_KEY}`,"Content-Type":"application/json"},
-        body:JSON.stringify({query})
-      });
-      return r.ok ? await r.json() : null;
-    } catch { return null; }
-  }
+  async getJobs(s,cat,lim=80){let q=sb.from("jobs").select("*").order("posted",{ascending:false}).limit(lim);if(s)q=q.or(`title.ilike.%${s}%,company.ilike.%${s}%`);if(cat&&cat!=="All")q=q.eq("category",cat);const{data}=await q;return data||[];},
+  async getProfile(){const{data:{user}}=await sb.auth.getUser();if(!user)return null;const{data}=await sb.from("profiles").select("*").eq("id",user.id).single();return data;},
+  async saveProfile(p){const{data:{user}}=await sb.auth.getUser();if(!user)return;await sb.from("profiles").upsert({id:user.id,...p,updated_at:new Date().toISOString()});},
+  async getQA(){const{data}=await sb.from("saved_qa").select("*").order("created_at");return data||[];},
+  async addQA(q,a){const{data:{user}}=await sb.auth.getUser();if(!user)return;await sb.from("saved_qa").insert({user_id:user.id,question:q,answer:a});},
+  async deleteQA(id){await sb.from("saved_qa").delete().eq("id",id);},
+  async getApplications(){const{data}=await sb.from("applications").select("*").order("applied_at",{ascending:false});return data||[];},
+  async uploadResume(file){const{data:{user}}=await sb.auth.getUser();if(!user||!file)return null;const fp=`${user.id}/${file.name}`;await sb.storage.from("resumes").upload(fp,file,{upsert:true});const{data:u}=sb.storage.from("resumes").getPublicUrl(fp);await sb.from("profiles").update({resume_url:u.publicUrl}).eq("id",user.id);return u.publicUrl;},
+  async queueApply(job,cover){const{data:{user}}=await sb.auth.getUser();if(!user)return;const p=await this.getProfile();const ghM=(job.url||"").match(/greenhouse\.io\/(\w+)\/jobs\/(\d+)/);await sb.from("apply_queue").insert({user_id:user.id,job_id:job.id,job_title:job.title,company:job.company,job_url:job.url,source:job.source,board_slug:ghM?.[1]||null,gh_job_id:ghM?.[2]||null,cover_letter:cover,resume_url:p?.resume_url||null,status:"pending"});},
+  async scrapeForm(url,source){try{const r=await fetch(`${CFG.SUPABASE_URL}/functions/v1/scrape-form`,{method:"POST",headers:{Authorization:`Bearer ${CFG.SUPABASE_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({url,source})});return r.ok?await r.json():null;}catch{return null;}},
+  async triggerApply(){try{const r=await fetch(`${CFG.SUPABASE_URL}/functions/v1/trigger-apply`,{method:"POST",headers:{Authorization:`Bearer ${CFG.SUPABASE_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({})});return r.ok?await r.json():null;}catch{return null;}},
+  async callAI(body){try{const r=await fetch(`${CFG.SUPABASE_URL}/functions/v1/ai`,{method:"POST",headers:{Authorization:`Bearer ${CFG.SUPABASE_KEY}`,"Content-Type":"application/json"},body:JSON.stringify(body)});return r.ok?await r.json():null;}catch{return null;}},
+  async liveSearch(q){try{const r=await fetch(`${CFG.SUPABASE_URL}/functions/v1/search-jobs`,{method:"POST",headers:{Authorization:`Bearer ${CFG.SUPABASE_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({query:q})});return r.ok?await r.json():null;}catch{return null;}}
 };
 
-// ── Small components ──
 function Chip({active,color=C.acc,children,onClick}){return <button onClick={onClick} style={{padding:"5px 14px",fontSize:12,border:`1px solid ${active?color+"55":C.br}`,borderRadius:99,background:active?color+"15":"transparent",color:active?color:C.t3,cursor:"pointer",fontWeight:500,fontFamily:M,transition:"all .15s"}}>{children}</button>}
 function ScanBar(){return <div style={{height:2,background:C.c2,borderRadius:1,overflow:"hidden",margin:"10px 0"}}><div style={{height:"100%",width:"30%",background:C.grad,animation:"scan 1.4s ease infinite"}}/></div>}
 function Modal({children,onClose}){return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",backdropFilter:"blur(12px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16,animation:"fadeIn .2s"}} onClick={e=>e.target===e.currentTarget&&onClose()}><div style={{background:C.c1,border:`1px solid ${C.br}`,borderRadius:20,maxWidth:560,width:"100%",maxHeight:"88vh",overflow:"auto",padding:28,animation:"up .3s ease"}}>{children}</div></div>}
 
-// ═══════════════════════════════════
-// LANDING PAGE (public, no auth)
-// ═══════════════════════════════════
-function Landing({onLogin}) {
-  return (
-    <div style={{minHeight:"100vh",background:C.bg}}>
-      {/* Nav */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 24px",maxWidth:960,margin:"0 auto"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:24}}>🔥</span>
-          <span style={{fontSize:20,fontWeight:900,background:C.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>FLINT</span>
-        </div>
-        <div style={{display:"flex",gap:8}}>
-          <a href="https://github.com/mafiaguy/flint" target="_blank" style={{padding:"8px 16px",border:`1px solid ${C.br}`,borderRadius:8,color:C.t2,fontSize:13,fontWeight:500}}>GitHub ↗</a>
-          <button onClick={onLogin} style={{padding:"8px 20px",background:C.grad,color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer"}}>Sign In</button>
-        </div>
-      </div>
+// ── Landing Page ──
+function Landing({onLogin}){return(
+<div style={{minHeight:"100vh",background:C.bg}}>
+  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 24px",maxWidth:960,margin:"0 auto"}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>🔥</span><span style={{fontSize:20,fontWeight:900,background:C.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>FLINT</span></div><div style={{display:"flex",gap:8}}><a href="https://github.com/mafiaguy/flint" target="_blank" style={{padding:"8px 16px",border:`1px solid ${C.br}`,borderRadius:8,color:C.t2,fontSize:13}}>GitHub ↗</a><button onClick={onLogin} style={{padding:"8px 20px",background:C.grad,color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer"}}>Sign In</button></div></div>
+  <div style={{maxWidth:720,margin:"0 auto",padding:"80px 24px 60px",textAlign:"center"}}><div style={{display:"inline-block",padding:"6px 16px",border:`1px solid ${C.acc}33`,borderRadius:99,fontSize:12,color:C.acc,fontFamily:M,marginBottom:20}}>OPEN SOURCE · FREE FOREVER · 9 JOB SOURCES</div><h1 style={{fontSize:"clamp(36px,6vw,56px)",fontWeight:900,lineHeight:1.1,marginBottom:20}}><span style={{background:C.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Stop hunting.</span><br/><span style={{color:C.t1}}>Start finding.</span></h1><p style={{fontSize:18,color:C.t2,maxWidth:520,margin:"0 auto 36px",lineHeight:1.7}}>Jobs scraped fresh from LinkedIn, Greenhouse, Lever, Adzuna & 5 more. AI matching. Auto apply. Zero config.</p><button onClick={onLogin} style={{padding:"16px 40px",background:C.grad,color:"#fff",border:"none",borderRadius:12,fontSize:17,fontWeight:800,cursor:"pointer"}}>Get Started — Free</button><p style={{color:C.t3,fontSize:12,marginTop:12}}>No credit card. No API keys. Just sign in.</p></div>
+  <div style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap",padding:"0 24px 60px",maxWidth:680,margin:"0 auto"}}>{["LinkedIn","Adzuna","Greenhouse","Lever","Ashby","Workable","HackerNews","Naukri"].map(s=><span key={s} style={{padding:"6px 16px",border:`1px solid ${C.br}`,borderRadius:99,fontSize:12,color:C.t2,fontFamily:M}}>{s}</span>)}</div>
+  <div style={{maxWidth:820,margin:"0 auto",padding:"0 24px 80px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16}}>{[{i:"🔍",t:"Real jobs, not hardcoded",d:"Scrapes 9 sources every 8 hours. 50+ company boards."},{i:"⚡",t:"AI matching",d:"Llama 3.3 70B scores every job against your profile."},{i:"🚀",t:"Auto Apply",d:"Playwright fills Greenhouse/Lever forms and submits."},{i:"📋",t:"Smart Q&A",d:"Real form fields auto-detected. Answers pre-filled."},{i:"🔒",t:"Your data, isolated",d:"Google/GitHub login. RLS-scoped. Nobody else sees it."},{i:"💰",t:"$0/month",d:"Supabase + GitHub Actions + Groq free tiers. MIT license."}].map((f,i)=><div key={i} style={{background:C.c1,border:`1px solid ${C.br}`,borderRadius:16,padding:20,animation:`up .4s ease ${i*.06}s both`}}><span style={{fontSize:28,display:"block",marginBottom:10}}>{f.i}</span><h3 style={{fontSize:15,fontWeight:700,color:C.t1,marginBottom:6}}>{f.t}</h3><p style={{fontSize:13,color:C.t2,lineHeight:1.6}}>{f.d}</p></div>)}</div>
+  <div style={{textAlign:"center",padding:"40px 24px 60px",borderTop:`1px solid ${C.br}`}}><button onClick={onLogin} style={{padding:"14px 36px",background:C.grad,color:"#fff",border:"none",borderRadius:12,fontSize:16,fontWeight:700,cursor:"pointer"}}>Launch FLINT 🔥</button></div>
+  <div style={{textAlign:"center",padding:"20px 24px",borderTop:`1px solid ${C.br}`,fontSize:12,color:C.t3}}>Built by <a href="https://mafiaguy.github.io" target="_blank" style={{color:C.acc}}>mafiaguy</a> · <a href="https://github.com/mafiaguy/flint" target="_blank" style={{color:C.t2}}>Source</a> · MIT</div>
+</div>)}
 
-      {/* Hero */}
-      <div style={{maxWidth:720,margin:"0 auto",padding:"80px 24px 60px",textAlign:"center"}}>
-        <div style={{display:"inline-block",padding:"6px 16px",border:`1px solid ${C.acc}33`,borderRadius:99,fontSize:12,color:C.acc,fontFamily:M,marginBottom:20,letterSpacing:1}}>OPEN SOURCE · FREE FOREVER · 9 JOB SOURCES</div>
-        <h1 style={{fontSize:"clamp(36px, 6vw, 56px)",fontWeight:900,lineHeight:1.1,marginBottom:20}}>
-          <span style={{background:C.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Stop hunting.</span><br/>
-          <span style={{color:C.t1}}>Start finding.</span>
-        </h1>
-        <p style={{fontSize:18,color:C.t2,maxWidth:520,margin:"0 auto 36px",lineHeight:1.7}}>
-          Jobs scraped fresh from LinkedIn, Greenhouse, Lever, Adzuna & 5 more sources. AI matching. One-click apply. Zero config.
-        </p>
-        <button onClick={onLogin} style={{padding:"16px 40px",background:C.grad,color:"#fff",border:"none",borderRadius:12,fontSize:17,fontWeight:800,cursor:"pointer",letterSpacing:.3}}>Get Started — Free</button>
-        <p style={{color:C.t3,fontSize:12,marginTop:12}}>No credit card. No API keys. Just sign in and go.</p>
-      </div>
+// ── Auth Modal ──
+function AuthModal({onClose}){const[ld,setLd]=useState(null);const signIn=async p=>{setLd(p);await sb.auth.signInWithOAuth({provider:p,options:{redirectTo:window.location.origin+window.location.pathname}});};return(<Modal onClose={onClose}><div style={{textAlign:"center",padding:"10px 0"}}><span style={{fontSize:40}}>🔥</span><h2 style={{fontSize:24,fontWeight:800,color:C.t1,margin:"12px 0 4px"}}>Sign in to FLINT</h2><p style={{color:C.t2,fontSize:14,marginBottom:28}}>Your data stays private to you.</p><button onClick={()=>signIn("google")} disabled={!!ld} style={{width:"100%",padding:14,background:"#fff",color:"#333",border:"none",borderRadius:10,fontSize:15,fontWeight:600,cursor:ld?"wait":"pointer",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>Continue with Google</button><button onClick={()=>signIn("github")} disabled={!!ld} style={{width:"100%",padding:14,background:C.c2,color:C.t1,border:`1px solid ${C.br}`,borderRadius:10,fontSize:15,fontWeight:600,cursor:ld?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>Continue with GitHub</button></div></Modal>)}
 
-      {/* Source badges */}
-      <div style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap",padding:"0 24px 60px",maxWidth:680,margin:"0 auto"}}>
-        {["LinkedIn","Adzuna","Greenhouse","Lever","Ashby","Workable","HackerNews","Naukri","Apify"].map(s=>(
-          <span key={s} style={{padding:"6px 16px",border:`1px solid ${C.br}`,borderRadius:99,fontSize:12,color:C.t2,fontFamily:M}}>{s}</span>
-        ))}
-      </div>
-
-      {/* Features */}
-      <div style={{maxWidth:820,margin:"0 auto",padding:"0 24px 80px",display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:16}}>
-        {[
-          {icon:"🔍",title:"Real jobs, not hardcoded",desc:"GitHub Actions scrapes 9 sources every 8 hours. Greenhouse, Lever, Ashby APIs for 50+ companies. Playwright for LinkedIn & Naukri."},
-          {icon:"⚡",title:"AI-powered matching",desc:"Click 'Match' on any job — Llama 3.3 70B analyzes your profile vs requirements. Get a score, strengths, gaps, and a verdict."},
-          {icon:"📋",title:"Smart Q&A vault",desc:"Save answers to portal questions once — they auto-fill on every future application. Add new ones from any job portal."},
-          {icon:"✉️",title:"AI cover letters",desc:"Generate tailored cover letters in one click. Specific to each job, not generic templates. Edit before sending."},
-          {icon:"🔒",title:"Your data, isolated",desc:"Sign in with Google or GitHub. Your profile, applications, and saved answers are scoped to you. Nobody else sees them."},
-          {icon:"💰",title:"Free. Open source.",desc:"Runs on Supabase, GitHub Actions, and Groq free tiers. Fork it, customize it, self-host it. MIT license."},
-        ].map((f,i)=>(
-          <div key={i} style={{background:C.c1,border:`1px solid ${C.br}`,borderRadius:16,padding:20,animation:`up .4s ease ${i*.06}s both`}}>
-            <span style={{fontSize:28,display:"block",marginBottom:10}}>{f.icon}</span>
-            <h3 style={{fontSize:15,fontWeight:700,color:C.t1,marginBottom:6}}>{f.title}</h3>
-            <p style={{fontSize:13,color:C.t2,lineHeight:1.6}}>{f.desc}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* How it works */}
-      <div style={{maxWidth:720,margin:"0 auto",padding:"0 24px 80px",textAlign:"center"}}>
-        <h2 style={{fontSize:28,fontWeight:800,color:C.t1,marginBottom:8}}>How it works</h2>
-        <p style={{color:C.t2,fontSize:14,marginBottom:32}}>Three steps. Sixty seconds.</p>
-        <div style={{display:"flex",gap:16,flexWrap:"wrap",justifyContent:"center"}}>
-          {[
-            {n:"1",t:"Sign in",d:"Google or GitHub. One click."},
-            {n:"2",t:"Fill your profile",d:"Role, skills, notice period. Takes 30 seconds."},
-            {n:"3",t:"Hunt",d:"Browse jobs, AI match, one-click apply with saved answers."},
-          ].map(s=>(
-            <div key={s.n} style={{flex:"1 1 180px",maxWidth:220,padding:20,background:C.c2,borderRadius:14,border:`1px solid ${C.br}`}}>
-              <div style={{width:36,height:36,borderRadius:99,background:C.acc+"22",color:C.acc,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:16,margin:"0 auto 12px",fontFamily:M}}>{s.n}</div>
-              <h4 style={{fontSize:14,fontWeight:700,color:C.t1,marginBottom:4}}>{s.t}</h4>
-              <p style={{fontSize:13,color:C.t3}}>{s.d}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* CTA */}
-      <div style={{textAlign:"center",padding:"40px 24px 80px",borderTop:`1px solid ${C.br}`}}>
-        <h2 style={{fontSize:24,fontWeight:800,color:C.t1,marginBottom:16}}>Ready to stop scrolling job boards?</h2>
-        <button onClick={onLogin} style={{padding:"14px 36px",background:C.grad,color:"#fff",border:"none",borderRadius:12,fontSize:16,fontWeight:700,cursor:"pointer"}}>Launch FLINT 🔥</button>
-      </div>
-
-      {/* Footer */}
-      <div style={{textAlign:"center",padding:"20px 24px",borderTop:`1px solid ${C.br}`,fontSize:12,color:C.t3}}>
-        Built by <a href="https://mafiaguy.github.io" target="_blank" style={{color:C.acc}}>mafiaguy</a> · <a href="https://github.com/mafiaguy/flint" target="_blank" style={{color:C.t2}}>Source on GitHub</a> · MIT License
-      </div>
+// ── Job Card ──
+function JobCard({job,applied,onApply,onMatch}){const[exp,setExp]=useState(false);const days=job.posted?Math.max(0,Math.floor((Date.now()-new Date(job.posted))/864e5)):null;const srcC=job.source==="LinkedIn"?"#0a66c2":job.source==="Greenhouse"?"#3b8132":job.source==="HackerNews"?"#ff6600":C.acc;return(
+<div style={{background:C.c1,border:`1px solid ${applied?C.grn+"33":C.br}`,borderRadius:16,padding:18,animation:"up .35s ease",position:"relative"}}>
+  {applied&&<div style={{position:"absolute",top:12,right:12,background:C.grn+"22",color:C.grn,fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:99,fontFamily:M}}>APPLIED</div>}
+  <div style={{display:"flex",gap:14}}>
+    <div style={{width:44,height:44,borderRadius:12,background:srcC+"15",border:`1px solid ${srcC}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:900,color:srcC,flexShrink:0,fontFamily:M}}>{job.company?.charAt(0)||"?"}</div>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:5}}><span style={{fontSize:10,fontFamily:M,fontWeight:700,color:srcC}}>{(job.source||"").toUpperCase()}</span><span style={{fontSize:11,color:C.t3}}>{FLAGS[job.country]||"🌐"}</span>{job.remote&&<span style={{fontSize:10,color:C.grn,fontFamily:M}}>🌍 Remote</span>}{days!==null&&<span style={{fontSize:10,color:C.t3,fontFamily:M}}>⏱ {days===0?"Today":`${days}d`}</span>}</div>
+      <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:700,color:C.t1,lineHeight:1.3}}>{job.title}</h3>
+      <p style={{margin:0,fontSize:14,color:C.t2}}>{job.company}</p>
+      <p style={{margin:"2px 0 0",fontSize:12,color:C.t3}}>{job.location}</p>
+      {job.salary&&job.salary!=="—"&&<p style={{margin:"6px 0 0",fontSize:14,fontWeight:700,color:C.grn,fontFamily:M}}>{job.salary}</p>}
     </div>
-  );
-}
+  </div>
+  {exp&&<div style={{marginTop:14,padding:14,background:C.bg,borderRadius:10,border:`1px solid ${C.br}`,fontSize:13,lineHeight:1.7,color:C.t2,maxHeight:400,overflow:"auto",whiteSpace:"pre-wrap"}}>{job.description||"No description."}</div>}
+  <div style={{display:"flex",gap:8,marginTop:14,flexWrap:"wrap",alignItems:"center"}}>
+    {job.category&&<span style={{fontSize:10,fontFamily:M,color:C.t3,background:C.c2,padding:"4px 10px",borderRadius:99}}>{job.category}</span>}
+    <div style={{flex:1}}/>
+    <button onClick={()=>setExp(!exp)} style={{padding:"7px 14px",fontSize:12,border:`1px solid ${C.br}`,borderRadius:8,background:"transparent",color:C.t2,cursor:"pointer"}}>{exp?"Hide":"Details"}</button>
+    <a href={job.url} target="_blank" rel="noopener noreferrer" style={{padding:"7px 14px",fontSize:12,border:`1px solid ${C.blu}33`,borderRadius:8,color:C.blu,textDecoration:"none"}}>Career Page ↗</a>
+    <button onClick={()=>onMatch(job)} style={{padding:"7px 14px",fontSize:12,border:`1px solid ${C.pur}33`,borderRadius:8,background:"transparent",color:C.pur,cursor:"pointer",fontWeight:600}}>⚡ Match</button>
+    <button onClick={()=>onApply(job)} style={{padding:"8px 20px",background:applied?C.grn+"22":C.grad,color:applied?C.grn:"#fff",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer"}}>{applied?"✓ Applied":"Apply →"}</button>
+  </div>
+</div>)}
 
-// ═══════════════════════════════════
-// AUTH MODAL
-// ═══════════════════════════════════
-function AuthModal({onClose}) {
-  const [loading,setLoading] = useState(null);
-  const [error,setError] = useState("");
+// ── Apply Modal — two modes ──
+function ApplyModal({job,profile,onClose,onApply}){
+  const hasAPI = /greenhouse|lever|ashby/i.test(job.source||"");
+  const[fields,setFields]=useState([]);const[ans,setAns]=useState({});
+  const[loading,setLoading]=useState(hasAPI);
+  const[cover,setCover]=useState("");const[genL,setGenL]=useState(false);
+  const gen=async()=>{setGenL(true);const r=await db.callAI({type:"cover",job:{title:job.title,company:job.company,desc:(job.description||"").slice(0,600)},profile});setCover(r?.text||"AI unavailable.");setGenL(false);};
 
-  const signIn = async(provider)=>{
-    setLoading(provider); setError("");
-    const {error} = await supabase.auth.signInWithOAuth({
-      provider,
-      options:{ redirectTo: window.location.origin + window.location.pathname }
-    });
-    if(error) { setError(error.message); setLoading(null); }
-  };
+  useEffect(()=>{
+    if(!hasAPI)return;
+    (async()=>{
+      setLoading(true);
+      let fd=null;
+      // Try scraping real form fields via API
+      if(job.url) fd=await db.scrapeForm(job.url,job.source);
+      // Fall back to DB-stored questions
+      if(!fd?.fields?.length&&job.questions){try{const q=JSON.parse(job.questions);fd={fields:q.map(x=>({label:x.label||x.q,type:x.type||"text",required:x.required,options:x.options||[]}))}}catch{}}
+      if(fd?.fields?.length){
+        setFields(fd.fields);
+        // AI fills answers
+        const r=await db.callAI({type:"autofill",job:{title:job.title,company:job.company,desc:(job.description||"").slice(0,800)},profile,questions:fd.fields.map(f=>({label:f.label,type:f.type}))});
+        if(r?.text){try{const f=JSON.parse(r.text.replace(/```json|```/g,"").trim());const a={};fd.fields.forEach((fld,i)=>{const m=f.find(x=>fld.label?.toLowerCase().includes((x.q||"").toLowerCase().slice(0,12)));a[i]=m?.a||"";});setAns(a);}catch{}}
+      }
+      setLoading(false);
+    })();
+  },[]);
 
-  return (
+  // ── Simple mode: custom career pages ──
+  if(!hasAPI){return(
     <Modal onClose={onClose}>
       <div style={{textAlign:"center",padding:"10px 0"}}>
-        <span style={{fontSize:40}}>🔥</span>
-        <h2 style={{fontSize:24,fontWeight:800,color:C.t1,margin:"12px 0 4px"}}>Sign in to FLINT</h2>
-        <p style={{color:C.t2,fontSize:14,marginBottom:28}}>Your profile, applications, and saved answers stay private to you.</p>
-
-        <button onClick={()=>signIn("google")} disabled={!!loading} style={{width:"100%",padding:14,background:"#fff",color:"#333",border:"none",borderRadius:10,fontSize:15,fontWeight:600,cursor:loading?"wait":"pointer",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"center",gap:10,opacity:loading&&loading!=="google"?.5:1}}>
-          <svg width="20" height="20" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-          {loading==="google"?"Redirecting...":"Continue with Google"}
-        </button>
-
-        <button onClick={()=>signIn("github")} disabled={!!loading} style={{width:"100%",padding:14,background:C.c2,color:C.t1,border:`1px solid ${C.br}`,borderRadius:10,fontSize:15,fontWeight:600,cursor:loading?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,opacity:loading&&loading!=="github"?.5:1}}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-          {loading==="github"?"Redirecting...":"Continue with GitHub"}
-        </button>
-
-        {error && <p style={{color:C.red,fontSize:13,marginTop:12}}>{error}</p>}
-        <p style={{color:C.t3,fontSize:11,marginTop:20,lineHeight:1.6}}>By signing in you agree to our use of cookies for authentication. We don't sell your data.</p>
+        <div style={{width:56,height:56,borderRadius:14,background:C.acc+"15",border:`1px solid ${C.acc}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:900,color:C.acc,margin:"0 auto 16px",fontFamily:M}}>{job.company?.charAt(0)}</div>
+        <h3 style={{color:C.t1,fontSize:20,fontWeight:800,margin:"0 0 4px"}}>{job.title}</h3>
+        <p style={{color:C.t2,fontSize:14}}>{job.company} · {job.location}</p>
+        <p style={{color:C.t3,fontSize:12,margin:"12px 0 24px"}}>This is on {job.company}'s career page. Apply directly.</p>
+        <a href={job.url} target="_blank" rel="noopener noreferrer" onClick={()=>{onApply(job,"","manual");onClose();}} style={{display:"block",width:"100%",padding:16,background:C.grad,color:"#fff",borderRadius:12,textAlign:"center",fontWeight:800,fontSize:16,textDecoration:"none",marginBottom:10}}>Apply on {job.company} ↗</a>
+        <button onClick={()=>{onApply(job,"","manual");onClose();}} style={{width:"100%",padding:12,background:C.c2,color:C.t2,border:`1px solid ${C.br}`,borderRadius:10,fontSize:13,cursor:"pointer"}}>Just track this</button>
       </div>
     </Modal>
-  );
-}
+  );}
 
-// ═══════════════════════════════════
-// JOB CARD
-// ═══════════════════════════════════
-function JobCard({job,applied,onApply,onMatch}) {
-  const [exp,setExp]=useState(false);
-  const days=job.posted?Math.max(0,Math.floor((Date.now()-new Date(job.posted))/864e5)):null;
-  const srcC=job.source==="LinkedIn"?"#0a66c2":job.source==="Greenhouse"?"#3b8132":job.source==="HackerNews"?"#ff6600":C.acc;
-  return (
-    <div style={{background:C.c1,border:`1px solid ${applied?C.grn+"33":C.br}`,borderRadius:16,padding:18,animation:"up .35s ease",position:"relative"}}>
-      {applied&&<div style={{position:"absolute",top:12,right:12,background:C.grn+"22",color:C.grn,fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:99,fontFamily:M}}>APPLIED</div>}
-      <div style={{display:"flex",gap:14}}>
-        <div style={{width:44,height:44,borderRadius:12,background:srcC+"15",border:`1px solid ${srcC}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:900,color:srcC,flexShrink:0,fontFamily:M}}>{job.company?.charAt(0)||"?"}</div>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:5}}>
-            <span style={{fontSize:10,fontFamily:M,fontWeight:700,color:srcC}}>{(job.source||"").toUpperCase()}</span>
-            <span style={{fontSize:11,color:C.t3}}>{FLAGS[job.country]||"🌐"}</span>
-            {job.remote&&<span style={{fontSize:10,color:C.grn,fontFamily:M}}>🌍 Remote</span>}
-            {days!==null&&<span style={{fontSize:10,color:C.t3,fontFamily:M}}>⏱ {days===0?"Today":`${days}d`}</span>}
-          </div>
-          <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:700,color:C.t1,lineHeight:1.3}}>{job.title}</h3>
-          <p style={{margin:0,fontSize:14,color:C.t2}}>{job.company}</p>
-          <p style={{margin:"2px 0 0",fontSize:12,color:C.t3}}>{job.location}</p>
-          {job.salary&&job.salary!=="—"&&<p style={{margin:"6px 0 0",fontSize:14,fontWeight:700,color:C.grn,fontFamily:M}}>{job.salary}</p>}
-        </div>
-      </div>
-      {exp&&<div style={{marginTop:14,padding:14,background:C.bg,borderRadius:10,border:`1px solid ${C.br}`,fontSize:13,lineHeight:1.7,color:C.t2,maxHeight:400,overflow:"auto",whiteSpace:"pre-wrap"}}>{job.description||"No description. Click the job link for full details."}</div>}
-      <div style={{display:"flex",gap:8,marginTop:14,flexWrap:"wrap",alignItems:"center"}}>
-        {job.category&&<span style={{fontSize:10,fontFamily:M,color:C.t3,background:C.c2,padding:"4px 10px",borderRadius:99}}>{job.category}</span>}
-        <div style={{flex:1}}/>
-        <button onClick={()=>setExp(!exp)} style={{padding:"7px 14px",fontSize:12,border:`1px solid ${C.br}`,borderRadius:8,background:"transparent",color:C.t2,cursor:"pointer"}}>{exp?"Hide":"Details"}</button>
-        <a href={job.url} target="_blank" rel="noopener noreferrer" style={{padding:"7px 14px",fontSize:12,border:`1px solid ${C.blu}33`,borderRadius:8,color:C.blu,textDecoration:"none",fontWeight:500}}>Career Page ↗</a>
-        <button onClick={()=>onMatch(job)} style={{padding:"7px 14px",fontSize:12,border:`1px solid ${C.pur}33`,borderRadius:8,background:"transparent",color:C.pur,cursor:"pointer",fontWeight:600}}>⚡ Match</button>
-        <button onClick={()=>onApply(job)} style={{padding:"8px 20px",background:applied?C.grn+"22":C.grad,color:applied?C.grn:"#fff",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer"}}>{applied?"✓ Applied":"Apply →"}</button>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════
-// APPLY MODAL
-// ═══════════════════════════════════
-function ApplyModal({job,qa,profile,onClose,onApply}) {
-  const hasAPI = /greenhouse|lever|ashby/i.test(job.source || "");
-  const jobQuestions = React.useMemo(()=>{
-    try { return job.questions ? JSON.parse(job.questions) : []; } catch { return []; }
-  },[job]);
-
-  const [aiQuestions,setAiQuestions] = useState([]);
-  const [aiLoading,setAiLoading] = useState(hasAPI);
-  const [jobAns,setJobAns] = useState({});
-  const [cover,setCover] = useState("");const [genL,setGenL] = useState(false);
-
-  // Only fetch form fields for Greenhouse/Lever/Ashby — they have real APIs
-  useEffect(()=>{
-    if (!hasAPI) return;
-    (async()=>{
-      setAiLoading(true);
-      let formData = null;
-      if (job.url) formData = await db.scrapeForm(job.url, job.source);
-      if (!formData?.fields?.length && jobQuestions.length > 0) {
-        formData = { fields: jobQuestions.map(q => ({ name: q.name || q.label, label: q.label || q.q, type: q.type || "text", required: q.required || false, options: q.options || [] })), source: job.source };
-      }
-      if (formData?.fields?.length) {
-        setAiQuestions(formData.fields);
-        const r = await db.callAI({ type:"autofill", job:{title:job.title,company:job.company,desc:(job.description||"").slice(0,800)}, profile, questions:formData.fields.map(f=>({label:f.label,type:f.type})) });
-        if(r?.text) { try { const filled = JSON.parse(r.text.replace(/```json|```/g,"").trim()); const a={}; formData.fields.forEach((f,i)=>{ const m=filled.find(x=>f.label?.toLowerCase().includes(x.q?.toLowerCase().slice(0,15))||x.q?.toLowerCase().includes(f.label?.toLowerCase().slice(0,15))); a[i]=m?.a||""; }); setJobAns(a); } catch {} }
-      }
-      setAiLoading(false);
-    })();
-  },[]);
-
-  const gen=async()=>{setGenL(true);const r=await db.callAI({type:"cover",job:{title:job.title,company:job.company,desc:(job.description||"").slice(0,600)},profile});setCover(r?.text||"AI unavailable.");setGenL(false);};
-  const displayQuestions = aiQuestions.length > 0 ? aiQuestions : jobQuestions.map(q=>({label:q.label||q.q,type:q.type||"text",required:q.required,options:q.options||[]}));
-
-  // ── Simple mode: custom career pages (LinkedIn, Adzuna, HN, Career Page) ──
-  if (!hasAPI) {
-    return (
-      <Modal onClose={onClose}>
-        <div style={{textAlign:"center",padding:"10px 0"}}>
-          <div style={{width:56,height:56,borderRadius:14,background:(C.acc)+"15",border:`1px solid ${C.acc}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:900,color:C.acc,margin:"0 auto 16px",fontFamily:M}}>{job.company?.charAt(0)}</div>
-          <h3 style={{color:C.t1,fontSize:20,fontWeight:800,margin:"0 0 4px"}}>{job.title}</h3>
-          <p style={{color:C.t2,fontSize:14}}>{job.company} · {job.location}</p>
-          <p style={{color:C.t3,fontSize:12,margin:"12px 0 24px"}}>This job is on {job.company}'s own career page. Click below to apply directly.</p>
-
-          <a href={job.url} target="_blank" rel="noopener noreferrer" onClick={()=>{onApply(job,"","manual");onClose();}} style={{display:"block",width:"100%",padding:16,background:C.grad,color:"#fff",borderRadius:12,textAlign:"center",fontWeight:800,fontSize:16,textDecoration:"none",marginBottom:10}}>Apply on {job.company} ↗</a>
-
-          <button onClick={()=>{onApply(job,"","manual");onClose();}} style={{width:"100%",padding:12,background:C.c2,color:C.t2,border:`1px solid ${C.br}`,borderRadius:10,fontSize:13,cursor:"pointer"}}>Just track this application</button>
-        </div>
-      </Modal>
-    );
-  }
-
-  // ── Full mode: Greenhouse / Lever / Ashby (have form APIs) ──
-  return (
+  // ── Full mode: Greenhouse/Lever/Ashby ──
+  return(
     <Modal onClose={onClose}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:20}}>
-        <div>
-          <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.acc,marginBottom:6}}>APPLYING TO</div>
-          <h3 style={{color:C.t1,fontSize:20,fontWeight:800,margin:0}}>{job.title}</h3>
-          <p style={{color:C.t2,fontSize:13,margin:"4px 0 0"}}>{job.company} · {job.location}</p>
-        </div>
+        <div><div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.acc,marginBottom:6}}>APPLYING TO</div><h3 style={{color:C.t1,fontSize:20,fontWeight:800,margin:0}}>{job.title}</h3><p style={{color:C.t2,fontSize:13,margin:"4px 0 0"}}>{job.company} · {job.location}</p></div>
         <button onClick={onClose} style={{background:"none",border:"none",color:C.t3,cursor:"pointer",fontSize:20}}>✕</button>
       </div>
-
-      {aiLoading ? (
-        <div style={{textAlign:"center",padding:"24px 0"}}>
-          <div style={{width:28,height:28,border:`3px solid ${C.br}`,borderTopColor:C.grn,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
-          <p style={{color:C.t3,fontSize:13,marginTop:10}}>Fetching real form fields from {job.source}...</p>
-        </div>
-      ) : displayQuestions.length > 0 && (
-        <>
-          <div style={{fontSize:10,fontFamily:M,letterSpacing:2,marginBottom:10,display:"flex",alignItems:"center",gap:6,color:C.grn}}>
-            <span style={{width:6,height:6,borderRadius:99,background:C.grn,display:"inline-block"}}/>
-            REAL FORM FIELDS ({displayQuestions.length} from {job.source})
-          </div>
-          {displayQuestions.map((q,i)=>{
-            const isResume = q.type==="file" || /resume|cv|upload/i.test(q.label||"");
-            return (
-              <div key={`dq-${i}`} style={{marginBottom:12}}>
-                <label style={{fontSize:12,fontWeight:600,color:C.t2,display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-                  {q.label||q.q} {q.required&&<span style={{color:C.red,fontSize:10}}>required</span>}
-                  <span style={{fontSize:9,fontFamily:M,padding:"1px 6px",borderRadius:99,background:C.grn+"22",color:C.grn}}>real</span>
-                </label>
-                {isResume ? (
-                  <div style={{padding:"10px 14px",border:`1px solid ${profile?.resume_url?C.grn+"55":C.br}`,borderRadius:8,background:C.c1,fontSize:13}}>
-                    {profile?.resume_url
-                      ? <span style={{color:C.grn}}>✓ {profile.resume_url.split("/").pop()} (from Vault)</span>
-                      : <span style={{color:C.acc}}>⚠ Upload resume in Vault tab</span>}
-                  </div>
-                ) : q.type==="select" && q.options?.length ? (
-                  <select value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))} style={{width:"100%",padding:"10px 14px",border:`1px solid ${C.br}`,borderRadius:8,fontSize:14,background:C.c1,color:C.t1}}>
-                    <option value="">Select...</option>
-                    {q.options.map(o=><option key={o.label||o} value={o.value||o.label||o}>{o.label||o}</option>)}
-                  </select>
-                ) : q.type==="textarea" ? (
-                  <textarea value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))} rows={3} style={{resize:"vertical",lineHeight:1.6}}/>
-                ) : (
-                  <div style={{position:"relative"}}>
-                    <input value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))}/>
-                    {jobAns[i]&&<span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:9,fontFamily:M,color:C.pur,background:C.pur+"15",padding:"2px 6px",borderRadius:4}}>AI</span>}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </>
-      )}
-
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"16px 0 8px"}}>
-        <span style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.t3}}>AI COVER LETTER</span>
-        <button onClick={gen} disabled={genL} style={{padding:"6px 16px",background:"transparent",border:`1px solid ${C.pur}55`,borderRadius:8,color:C.pur,cursor:genL?"wait":"pointer",fontSize:12,fontWeight:600}}>⚡ {genL?"...":"Generate"}</button>
-      </div>
-      <textarea value={cover} onChange={e=>setCover(e.target.value)} placeholder="Click Generate or write your own..." rows={4} style={{resize:"vertical",lineHeight:1.6}}/>
-
+      {loading?<div style={{textAlign:"center",padding:"24px 0"}}><div style={{width:28,height:28,border:`3px solid ${C.br}`,borderTopColor:C.grn,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/><p style={{color:C.t3,fontSize:13,marginTop:10}}>Fetching real form fields...</p></div>
+      :fields.length>0&&<>
+        <div style={{fontSize:10,fontFamily:M,letterSpacing:2,marginBottom:10,color:C.grn,display:"flex",alignItems:"center",gap:6}}><span style={{width:6,height:6,borderRadius:99,background:C.grn}}/>REAL FORM FIELDS ({fields.length} from {job.source})</div>
+        {fields.map((q,i)=>{const isResume=q.type==="file"||/resume|cv|upload/i.test(q.label||"");return(
+          <div key={i} style={{marginBottom:12}}>
+            <label style={{fontSize:12,fontWeight:600,color:C.t2,display:"flex",alignItems:"center",gap:6,marginBottom:4}}>{q.label}{q.required&&<span style={{color:C.red,fontSize:10}}>required</span>}<span style={{fontSize:9,fontFamily:M,padding:"1px 6px",borderRadius:99,background:C.grn+"22",color:C.grn}}>real</span></label>
+            {isResume?<div style={{padding:"10px 14px",border:`1px solid ${profile?.resume_url?C.grn+"55":C.br}`,borderRadius:8,background:C.c1,fontSize:13}}>{profile?.resume_url?<span style={{color:C.grn}}>✓ {profile.resume_url.split("/").pop()} (from Vault)</span>:<span style={{color:C.acc}}>⚠ Upload resume in Vault</span>}</div>
+            :q.type==="select"&&q.options?.length?<select value={ans[i]||""} onChange={e=>setAns(p=>({...p,[i]:e.target.value}))} style={{width:"100%",padding:"10px 14px",border:`1px solid ${C.br}`,borderRadius:8,fontSize:14,background:C.c1,color:C.t1}}><option value="">Select...</option>{q.options.map(o=><option key={o.label||o} value={o.value||o.label||o}>{o.label||o}</option>)}</select>
+            :<div style={{position:"relative"}}><input value={ans[i]||""} onChange={e=>setAns(p=>({...p,[i]:e.target.value}))}/>{ans[i]&&<span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:9,fontFamily:M,color:C.pur,background:C.pur+"15",padding:"2px 6px",borderRadius:4}}>AI</span>}</div>}
+          </div>);})}
+      </>}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"16px 0 8px"}}><span style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.t3}}>AI COVER LETTER</span><button onClick={gen} disabled={genL} style={{padding:"6px 16px",background:"transparent",border:`1px solid ${C.pur}55`,borderRadius:8,color:C.pur,cursor:genL?"wait":"pointer",fontSize:12,fontWeight:600}}>⚡ {genL?"...":"Generate"}</button></div>
+      <textarea value={cover} onChange={e=>setCover(e.target.value)} placeholder="Click Generate or write..." rows={4} style={{resize:"vertical",lineHeight:1.6}}/>
       <div style={{display:"flex",gap:10,marginTop:20,flexWrap:"wrap"}}>
-        <a href={job.url} target="_blank" rel="noopener noreferrer" style={{padding:14,background:C.c2,color:C.t1,borderRadius:12,textAlign:"center",fontWeight:700,fontSize:13,border:`1px solid ${C.br}`,display:"block",flex:"1 1 100%"}}>Open on {job.source} ↗</a>
-        <button onClick={()=>{onApply(job,cover,"manual");onClose();}} style={{flex:1,padding:"14px 16px",background:C.c2,color:C.t1,border:`1px solid ${C.br}`,borderRadius:12,fontWeight:700,fontSize:13,cursor:"pointer"}}>📋 Track only</button>
-        <button onClick={async()=>{onApply(job,cover,"auto");const r=await db.triggerApply();if(r?.triggered)console.log("Worker triggered");onClose();}} style={{flex:1,padding:"14px 16px",background:C.grad,color:"#fff",border:"none",borderRadius:12,fontWeight:800,fontSize:13,cursor:"pointer"}}>🚀 Auto Apply</button>
-        {!profile?.resume_url&&<p style={{fontSize:11,color:C.acc,width:"100%",textAlign:"center",margin:0}}>⚠ Upload resume in Vault for auto-apply</p>}
+        <a href={job.url} target="_blank" rel="noopener noreferrer" style={{padding:14,background:C.c2,color:C.t1,borderRadius:12,textAlign:"center",fontWeight:700,fontSize:13,border:`1px solid ${C.br}`,flex:"1 1 100%",display:"block"}}>Open on {job.source} ↗</a>
+        <button onClick={()=>{onApply(job,cover,"manual");onClose();}} style={{flex:1,padding:"14px",background:C.c2,color:C.t1,border:`1px solid ${C.br}`,borderRadius:12,fontWeight:700,fontSize:13,cursor:"pointer"}}>📋 Track only</button>
+        <button onClick={async()=>{onApply(job,cover,"auto");await db.triggerApply();onClose();}} style={{flex:1,padding:"14px",background:C.grad,color:"#fff",border:"none",borderRadius:12,fontWeight:800,fontSize:13,cursor:"pointer"}}>🚀 Auto Apply</button>
       </div>
+      {!profile?.resume_url&&<p style={{fontSize:11,color:C.acc,marginTop:8,textAlign:"center"}}>⚠ Upload resume in Vault for auto-apply</p>}
     </Modal>
   );
 }
 
-  // On mount: scrape REAL form questions from the job URL, then AI-fill answers
-  useEffect(()=>{
-    (async()=>{
-      setAiLoading(true);
+// ── Match Modal ──
+function MatchModal({job,profile,onClose}){const[res,setRes]=useState("");const[ld,setLd]=useState(true);useEffect(()=>{(async()=>{const r=await db.callAI({type:"match",job:{title:job.title,company:job.company,location:job.location,desc:(job.description||"").slice(0,800)},profile});setRes(r?.text||"AI unavailable.");setLd(false);})();},[]);return <Modal onClose={onClose}><div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><div><div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.pur,marginBottom:6}}>AI MATCH</div><h3 style={{color:C.t1,fontSize:16,fontWeight:700,margin:0}}>{job.title} · {job.company}</h3></div><button onClick={onClose} style={{background:"none",border:"none",color:C.t3,cursor:"pointer",fontSize:20}}>✕</button></div>{ld?<div style={{textAlign:"center",padding:40}}><div style={{width:36,height:36,border:`3px solid ${C.br}`,borderTopColor:C.acc,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/></div>:<div style={{whiteSpace:"pre-wrap",fontSize:13,lineHeight:1.8,color:C.t2,background:C.bg,padding:18,borderRadius:12,border:`1px solid ${C.br}`}}>{res}</div>}</Modal>}
 
-      // Step 1: Fetch the REAL application form fields
-      let formData = null;
-      if (job.url) {
-        formData = await db.scrapeForm(job.url, job.source);
-      }
+// ═══════════════ MAIN APP ═══════════════
+function App(){
+  const[user,setUser]=useState(undefined);
+  const[showAuth,setShowAuth]=useState(false);
+  const[profile,setProfile]=useState(null);
+  const[qa,setQA]=useState([]);
+  const[tab,setTab]=useState("hunt");
+  const[jobs,setJobs]=useState([]);
+  const[loading,setLoading]=useState(false);
+  const[search,setSearch]=useState("");
+  const[cat,setCat]=useState("All");
+  const[selCountries,setSelCountries]=useState([]);
+  const[remoteOnly,setRemoteOnly]=useState(false);
+  const[applied,setApplied]=useState([]);
+  const[appliedJobs,setAppliedJobs]=useState([]);
+  const[applyM,setApplyM]=useState(null);
+  const[matchM,setMatchM]=useState(null);
+  const[status,setStatus]=useState("");
+  const[showMenu,setShowMenu]=useState(false);
+  const[aiQ,setAiQ]=useState("");const[aiR,setAiR]=useState("");const[aiLd,setAiLd]=useState(false);
+  const[onboarding,setOnboarding]=useState(false);
+  const[form,setForm]=useState({role:"",experience:"",skills:"",notice:"",compensation:"",expected:"",visa:"",work_mode:"No Preference"});
 
-      // Also check if we have scraped questions from the DB
-      if (!formData?.fields?.length && jobQuestions.length > 0) {
-        formData = {
-          fields: jobQuestions.map(q => ({
-            name: q.name || q.label,
-            label: q.label || q.q,
-            type: q.type || "text",
-            required: q.required || false,
-            options: q.options || [],
-          })),
-          source: job.source,
-        };
-      }
+  useEffect(()=>{sb.auth.getSession().then(({data:{session}})=>setUser(session?.user||null));const{data:{subscription}}=sb.auth.onAuthStateChange((_,s)=>{setUser(s?.user||null);if(s?.user)loadData();});return()=>subscription.unsubscribe();},[]);
+  const loadData=async()=>{const[p,q,apps,j]=await Promise.all([db.getProfile(),db.getQA(),db.getApplications(),db.getJobs()]);if(p){setProfile(p);if(!p.role)setOnboarding(true);}setQA(q||[]);setAppliedJobs(apps||[]);setApplied((apps||[]).map(a=>a.job_id));if(j?.length){setJobs(j);setStatus(`${j.length} jobs`);}};
+  useEffect(()=>{if(user)loadData();},[user]);
+  const doSearch=async()=>{setLoading(true);const[c,l]=await Promise.all([db.getJobs(search,cat),db.liveSearch(search)]);const all=[...(c||[]),...(l?.jobs||[])];const seen=new Set();const u=all.filter(j=>{const k=(j.title+j.company).toLowerCase().replace(/\W/g,"");if(seen.has(k))return false;seen.add(k);return true;});u.sort((a,b)=>new Date(b.posted||0)-new Date(a.posted||0));setJobs(u);setStatus(`${u.length} jobs`);setLoading(false);};
+  const handleApply=async(job,cover,mode="manual")=>{setApplied(p=>[...new Set([...p,job.id])]);setAppliedJobs(p=>[{job_id:job.id,title:job.title,company:job.company,location:job.location,source:job.source,url:job.url,cover_letter:cover,status:mode==="auto"?"queued":"applied",applied_at:new Date().toISOString()},...p]);if(mode==="auto")await db.queueApply(job,cover);const{data:{user:u}}=await sb.auth.getUser();if(u)await sb.from("applications").insert({job_id:job.id,title:job.title,company:job.company,location:job.location,source:job.source,url:job.url,cover_letter:cover,status:mode==="auto"?"queued":"applied",user_id:u.id});};
+  const saveSetup=async()=>{await db.saveProfile(form);setProfile(p=>({...p,...form}));const qs=[];if(form.notice)qs.push(["Notice period?",form.notice]);if(form.compensation)qs.push(["Current compensation?",form.compensation]);if(form.expected)qs.push(["Expected compensation?",form.expected]);if(form.visa)qs.push(["Work authorization?",form.visa]);if(form.experience)qs.push(["Years of experience?",form.experience+" years"]);for(const[q,a]of qs)await db.addQA(q,a);setQA(await db.getQA());setOnboarding(false);};
+  const filtered=jobs.filter(j=>{const mc=cat==="All"||(j.category||"").toLowerCase().includes(cat.toLowerCase());const ms=!search||[j.title,j.company,j.location].join(" ").toLowerCase().includes(search.toLowerCase());const mr=!remoteOnly||j.remote;const ml=selCountries.length===0||selCountries.includes(j.country);return mc&&ms&&mr&&ml;});
 
-      if (formData?.fields?.length) {
-        setAiQuestions(formData.fields);
+  if(user===undefined)return <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{width:36,height:36,border:`3px solid ${C.br}`,borderTopColor:C.acc,borderRadius:"50%",animation:"spin .8s linear infinite"}}/></div>;
+  if(!user)return <><Landing onLogin={()=>setShowAuth(true)}/>{showAuth&&<AuthModal onClose={()=>setShowAuth(false)}/>}</>;
+  if(onboarding)return(<div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}><div style={{maxWidth:480,width:"100%",animation:"up .4s ease"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:24}}><span style={{fontSize:24}}>🔥</span><span style={{fontSize:18,fontWeight:800,background:C.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>FLINT</span></div><h2 style={{color:C.t1,fontSize:24,fontWeight:800,marginBottom:4}}>Welcome{profile?.name?`, ${profile.name.split(" ")[0]}`:""}</h2><p style={{color:C.t3,fontSize:13,marginBottom:24}}>Quick setup — powers AI matching.</p>{[["role","Target role","Senior SRE"],["experience","Years","5"],["skills","Key skills","AWS, K8s, Python"],["notice","Notice period","30 days"],["compensation","Current comp","25 LPA"],["expected","Expected comp","65-90 LPA"],["visa","Work authorization","No visa needed"]].map(([k,l,ph])=><div key={k} style={{marginBottom:12}}><label style={{fontSize:11,fontWeight:600,color:C.t3,fontFamily:M,display:"block",marginBottom:4}}>{l.toUpperCase()}</label><input value={form[k]} onChange={e=>setForm(p=>({...p,[k]:e.target.value}))} placeholder={ph}/></div>)}<label style={{fontSize:11,fontWeight:600,color:C.t3,fontFamily:M,display:"block",marginBottom:6}}>WORK MODE</label><div style={{display:"flex",gap:8,marginBottom:24,flexWrap:"wrap"}}>{["Remote","Hybrid","Onsite","No Preference"].map(m=><Chip key={m} active={form.work_mode===m} onClick={()=>setForm(p=>({...p,work_mode:m}))}>{m}</Chip>)}</div><button onClick={saveSetup} style={{width:"100%",padding:16,background:C.grad,color:"#fff",border:"none",borderRadius:12,fontSize:16,fontWeight:700,cursor:"pointer"}}>Launch FLINT 🔥</button></div></div>);
 
-        // Step 2: Ask AI to fill answers for the real fields
-        const r = await db.callAI({
-          type: "autofill",
-          job: { title: job.title, company: job.company, desc: (job.description || "").slice(0, 800) },
-          profile,
-          questions: formData.fields.map(f => ({ label: f.label, type: f.type })),
-        });
-
-        if (r?.text) {
-          try {
-            const clean = r.text.replace(/```json|```/g, "").trim();
-            const filled = JSON.parse(clean);
-            const newAns = {};
-            // Match AI answers to fields by label
-            formData.fields.forEach((field, i) => {
-              const match = filled.find(f =>
-                f.q?.toLowerCase().includes(field.label?.toLowerCase().slice(0, 15)) ||
-                field.label?.toLowerCase().includes(f.q?.toLowerCase().slice(0, 15))
-              );
-              newAns[i] = match?.a || "";
-            });
-            setJobAns(newAns);
-          } catch {}
-        }
-      } else {
-        // Fallback: AI predicts questions
-        const r = await db.callAI({
-          type: "questions",
-          job: { title: job.title, company: job.company, location: job.location, desc: (job.description || "").slice(0, 1200) },
-          profile,
-        });
-        if (r?.text) {
-          try {
-            const clean = r.text.replace(/```json|```/g, "").trim();
-            const predicted = JSON.parse(clean);
-            setAiQuestions(predicted.map(p => ({
-              name: p.q?.slice(0, 20),
-              label: p.q,
-              type: "text",
-              required: false,
-              confidence: p.confidence,
-            })));
-            const newAns = {};
-            predicted.forEach((p, i) => { newAns[i] = p.a || ""; });
-            setJobAns(newAns);
-          } catch {}
-        }
-      }
-
-      setAiLoading(false);
-    })();
-  },[]);
-
-  const gen=async()=>{setGenL(true);const r=await db.callAI({type:"cover",job:{title:job.title,company:job.company,desc:(job.description||"").slice(0,600)},profile});setCover(r?.text||"AI unavailable.");setGenL(false);};
-
-  const displayQuestions = jobQuestions.length > 0 ? jobQuestions : aiQuestions;
-  const isAiPredicted = jobQuestions.length === 0 && aiQuestions.length > 0;
-
-  return (
-    <Modal onClose={onClose}>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:20}}>
-        <div>
-          <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.acc,marginBottom:6}}>APPLYING TO</div>
-          <h3 style={{color:C.t1,fontSize:20,fontWeight:800,margin:0}}>{job.title}</h3>
-          <p style={{color:C.t2,fontSize:13,margin:"4px 0 0"}}>{job.company} · {job.location}</p>
-        </div>
-        <button onClick={onClose} style={{background:"none",border:"none",color:C.t3,cursor:"pointer",fontSize:20}}>✕</button>
-      </div>
-
-      {/* Application form questions (scraped or AI-predicted) */}
-      {aiLoading ? (
-        <div style={{textAlign:"center",padding:"24px 0"}}>
-          <div style={{width:28,height:28,border:`3px solid ${C.br}`,borderTopColor:C.pur,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
-          <p style={{color:C.t3,fontSize:13,marginTop:10}}>Fetching real application form fields...</p>
-        </div>
-      ) : displayQuestions.length > 0 && (
-        <>
-          <div style={{fontSize:10,fontFamily:M,letterSpacing:2,marginBottom:10,display:"flex",alignItems:"center",gap:6,color:isAiPredicted?C.pur:C.grn}}>
-            <span style={{width:6,height:6,borderRadius:99,background:isAiPredicted?C.pur:C.grn,display:"inline-block"}}/>
-            {isAiPredicted
-              ? `AI-PREDICTED QUESTIONS (${displayQuestions.length} likely form fields)`
-              : `REAL FORM FIELDS (${displayQuestions.length} from ${job.source})`
-            }
-          </div>
-          {displayQuestions.map((q,i)=>{
-            const isFile = q.type==="file";
-            const isResume = isFile || /resume|cv/i.test(q.label||"");
-
-            return (
-            <div key={`dq-${i}`} style={{marginBottom:12}}>
-              <label style={{fontSize:12,fontWeight:600,color:C.t2,display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-                {q.label || q.q}
-                {q.required && <span style={{color:C.red,fontSize:10}}>required</span>}
-                {!isAiPredicted && <span style={{fontSize:9,fontFamily:M,padding:"1px 6px",borderRadius:99,background:C.grn+"22",color:C.grn}}>real</span>}
-              </label>
-
-              {/* Resume field — auto-attach from vault */}
-              {isResume ? (
-                <div style={{padding:"10px 14px",border:`1px solid ${profile?.resume_url?C.grn+"55":C.br}`,borderRadius:8,background:C.c1,fontSize:13}}>
-                  {profile?.resume_url ? (
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                      <span style={{color:C.grn}}>✓ {profile.resume_url.split("/").pop() || "Resume.pdf"} (from Vault)</span>
-                      <a href={profile.resume_url} target="_blank" style={{color:C.blu,fontSize:12}}>View ↗</a>
-                    </div>
-                  ) : (
-                    <span style={{color:C.acc}}>⚠ Upload your resume in the Vault tab first</span>
-                  )}
-                </div>
-              ) : q.type==="select" && q.options?.length > 0 ? (
-                <select value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))} style={{width:"100%",padding:"10px 14px",border:`1px solid ${C.br}`,borderRadius:8,fontSize:14,background:C.c1,color:C.t1}}>
-                  <option value="">Select...</option>
-                  {q.options.map(o=><option key={o.label||o} value={o.value||o.label||o}>{o.label||o}</option>)}
-                </select>
-              ) : q.type==="textarea" ? (
-                <textarea value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))} rows={3} style={{resize:"vertical",lineHeight:1.6}}/>
-              ) : (
-                <div style={{position:"relative"}}>
-                  <input value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))}/>
-                  {jobAns[i] && <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:9,fontFamily:M,color:C.pur,background:C.pur+"15",padding:"2px 6px",borderRadius:4}}>AI</span>}
-                </div>
-              )}
-            </div>
-          );})}
-          <div style={{borderTop:`1px solid ${C.br}`,margin:"16px 0"}}/>
-        </>
-      )}
-
-      {/* Saved answers — collapsed by default, only for reference */}
-      <button onClick={()=>setShowSaved(p=>!p)} style={{width:"100%",padding:"10px 14px",background:C.c2,border:`1px solid ${C.br}`,borderRadius:8,color:C.t3,cursor:"pointer",fontSize:11,fontFamily:M,letterSpacing:1,textAlign:"left",marginBottom:showSaved?10:0}}>
-        {showSaved?"▾":"▸"} YOUR SAVED ANSWERS ({allQ.length}) — for reference only
-      </button>
-      {showSaved && allQ.map((q,i)=>(<div key={i} style={{marginBottom:10,marginLeft:14}}><label style={{fontSize:12,fontWeight:600,color:C.t2,display:"block",marginBottom:3}}>{q.q}</label><input value={ans[i]??q.a} onChange={e=>setAns(p=>({...p,[i]:e.target.value}))}/></div>))}
-
-      <div style={{background:C.bg,borderRadius:12,padding:14,margin:"16px 0"}}>
-        <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.pur,marginBottom:8}}>ADD PORTAL QUESTION</div>
-        <input placeholder="Question..." value={nq} onChange={e=>setNq(e.target.value)} style={{marginBottom:6}}/>
-        <div style={{display:"flex",gap:8}}>
-          <input placeholder="Answer..." value={na} onChange={e=>setNa(e.target.value)} style={{flex:1}}/>
-          <button onClick={()=>{if(nq){setExtras(p=>[...p,{q:nq,a:na}]);setAns(p=>({...p,[allQ.length]:na}));db.addQA(nq,na);setNq("");setNa("");}}} style={{padding:"10px 18px",background:"transparent",border:`1px solid ${C.pur}`,borderRadius:8,color:C.pur,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>+ Save</button>
-        </div>
-      </div>
-
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"16px 0 8px"}}>
-        <span style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.t3}}>AI COVER LETTER</span>
-        <button onClick={gen} disabled={genL} style={{padding:"6px 16px",background:"transparent",border:`1px solid ${C.pur}55`,borderRadius:8,color:C.pur,cursor:genL?"wait":"pointer",fontSize:12,fontWeight:600}}>⚡ {genL?"Generating...":"Generate"}</button>
-      </div>
-      <textarea value={cover} onChange={e=>setCover(e.target.value)} placeholder="Click Generate or write your own..." rows={5} style={{resize:"vertical",lineHeight:1.6}}/>
-
-      <div style={{display:"flex",gap:10,marginTop:20,flexWrap:"wrap"}}>
-        <a href={job.url} target="_blank" rel="noopener noreferrer" style={{padding:14,background:C.c2,color:C.t1,borderRadius:12,textAlign:"center",fontWeight:700,fontSize:13,border:`1px solid ${C.br}`,display:"block",flex:"1 1 100%"}}>Open on {job.source} ↗</a>
-        <button onClick={()=>{onApply(job,cover,"manual");onClose();}} style={{flex:1,padding:"14px 16px",background:C.c2,color:C.t1,border:`1px solid ${C.br}`,borderRadius:12,fontWeight:700,fontSize:13,cursor:"pointer"}}>📋 Track only</button>
-        <button onClick={async()=>{
-          onApply(job,cover,"auto");
-          // Trigger GitHub Actions worker immediately
-          const r = await db.triggerApply();
-          if(r?.triggered) console.log("Auto-apply worker triggered!");
-          onClose();
-        }} style={{flex:1,padding:"14px 16px",background:C.grad,color:"#fff",border:"none",borderRadius:12,fontWeight:800,fontSize:13,cursor:"pointer"}}>🚀 Auto Apply</button>
-      </div>
-      {!profile?.resume_url && <p style={{fontSize:11,color:C.acc,marginTop:8,textAlign:"center"}}>⚠ Upload your resume in the Vault tab for auto-apply to work</p>}
-    </Modal>
-  );
-}
-
-function MatchModal({job,profile,onClose}) {
-  const [res,setRes]=useState("");const [ld,setLd]=useState(true);
-  useEffect(()=>{(async()=>{const r=await db.callAI({type:"match",job:{title:job.title,company:job.company,location:job.location,desc:(job.description||"").slice(0,800)},profile});setRes(r?.text||"AI unavailable. Check Edge Function.");setLd(false);})();},[]);
-  return <Modal onClose={onClose}><div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><div><div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.pur,marginBottom:6}}>AI MATCH</div><h3 style={{color:C.t1,fontSize:16,fontWeight:700,margin:0}}>{job.title} · {job.company}</h3></div><button onClick={onClose} style={{background:"none",border:"none",color:C.t3,cursor:"pointer",fontSize:20}}>✕</button></div>{ld?<div style={{textAlign:"center",padding:40}}><div style={{width:36,height:36,border:`3px solid ${C.br}`,borderTopColor:C.acc,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/></div>:<div style={{whiteSpace:"pre-wrap",fontSize:13,lineHeight:1.8,color:C.t2,background:C.bg,padding:18,borderRadius:12,border:`1px solid ${C.br}`}}>{res}</div>}</Modal>;
-}
-
-// ═══════════════════════════════════
-// MAIN APP (authenticated)
-// ═══════════════════════════════════
-function App() {
-  const [user,setUser] = useState(undefined); // undefined=loading, null=logged out
-  const [showAuth,setShowAuth] = useState(false);
-  const [profile,setProfile] = useState(null);
-  const [qa,setQA] = useState([]);
-  const [tab,setTab] = useState("hunt");
-  const [jobs,setJobs] = useState([]);
-  const [loading,setLoading] = useState(false);
-  const [search,setSearch] = useState("");
-  const [cat,setCat] = useState("All");
-  const [applied,setApplied] = useState([]);
-  const [appliedJobs,setAppliedJobs] = useState([]);
-  const [applyM,setApplyM] = useState(null);
-  const [matchM,setMatchM] = useState(null);
-  const [status,setStatus] = useState("");
-  const [aiQ,setAiQ] = useState("");const [aiR,setAiR] = useState("");const [aiLd,setAiLd] = useState(false);
-  const [onboarding,setOnboarding] = useState(false);
-  const [showMenu,setShowMenu] = useState(false);
-  const [selCountries,setSelCountries] = useState([]);
-  const [remoteOnly,setRemoteOnly] = useState(false);
-  const [form,setForm] = useState({role:"",experience:"",skills:"",notice:"",compensation:"",expected:"",visa:"",work_mode:"No Preference"});
-
-  // Auth listener
-  useEffect(()=>{
-    supabase.auth.getSession().then(({data:{session}})=>setUser(session?.user||null));
-    const {data:{subscription}} = supabase.auth.onAuthStateChange((_,session)=>{
-      setUser(session?.user||null);
-      if(session?.user) loadUserData();
-    });
-    return ()=>subscription.unsubscribe();
-  },[]);
-
-  const loadUserData = async()=>{
-    const [p, q, apps, j] = await Promise.all([db.getProfile(), db.getQA(), db.getApplications(), db.getJobs()]);
-    if(p) { setProfile(p); if(!p.role) setOnboarding(true); }
-    setQA(q||[]);
-    setAppliedJobs(apps||[]);
-    setApplied((apps||[]).map(a=>a.job_id));
-    if(j?.length) { setJobs(j); setStatus(`${j.length} jobs from latest scrape`); }
-  };
-
-  useEffect(()=>{ if(user) loadUserData(); },[user]);
-
-  const doSearch = async()=>{
-    setLoading(true);
-    const [cached,live] = await Promise.all([db.getJobs(search,cat), db.liveSearch(search)]);
-    const all = [...(cached||[]),...(live?.jobs||[])];
-    const seen=new Set();const uniq=all.filter(j=>{const k=(j.title+j.company).toLowerCase().replace(/\W/g,"");if(seen.has(k))return false;seen.add(k);return true;});
-    uniq.sort((a,b)=>new Date(b.posted||0)-new Date(a.posted||0));
-    setJobs(uniq);setStatus(`${uniq.length} jobs found`);setLoading(false);
-  };
-
-  const saveOnboarding = async()=>{
-    await db.saveProfile(form);
-    const p = {...profile,...form};setProfile(p);
-    const qs=[];
-    if(form.notice)qs.push({q:"Notice period?",a:form.notice});
-    if(form.compensation)qs.push({q:"Current compensation?",a:form.compensation});
-    if(form.expected)qs.push({q:"Expected compensation?",a:form.expected});
-    if(form.visa)qs.push({q:"Work authorization?",a:form.visa});
-    if(form.work_mode)qs.push({q:"Preferred work mode?",a:form.work_mode});
-    if(form.experience)qs.push({q:"Years of experience?",a:form.experience+" years"});
-    for(const q of qs) await db.addQA(q.q,q.a);
-    setQA(await db.getQA());
-    setOnboarding(false);
-  };
-
-  const handleApply = async(job,cover)=>{
-    setApplied(p=>[...new Set([...p,job.id])]);
-    const app = {job_id:job.id,title:job.title,company:job.company,location:job.location,source:job.source,url:job.url,cover_letter:cover,status:"applied"};
-    await db.addApplication(app);
-    setAppliedJobs(p=>[{...app,applied_at:new Date().toISOString()},...p]);
-  };
-
-  const signOut = async()=>{await supabase.auth.signOut();setUser(null);setProfile(null);};
-
-  const filtered = jobs.filter(j=>{
-    const mc=cat==="All"||(j.category||"").toLowerCase().includes(cat.toLowerCase());
-    const ms=!search||[j.title,j.company,j.location,j.description].join(" ").toLowerCase().includes(search.toLowerCase());
-    const mr=!remoteOnly||j.remote===true;
-    const ml=selCountries.length===0||selCountries.includes(j.country);
-    return mc&&ms&&mr&&ml;
-  });
-
-  // Loading state
-  if(user===undefined) return <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{width:36,height:36,border:`3px solid ${C.br}`,borderTopColor:C.acc,borderRadius:"50%",animation:"spin .8s linear infinite"}}/></div>;
-
-  // Not logged in → landing page
-  if(!user) return <><Landing onLogin={()=>setShowAuth(true)}/>{showAuth&&<AuthModal onClose={()=>setShowAuth(false)}/>}</>;
-
-  // Onboarding
-  if(onboarding) return (
-    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
-      <div style={{maxWidth:480,width:"100%",animation:"up .4s ease"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:24}}>
-          <span style={{fontSize:24}}>🔥</span>
-          <span style={{fontSize:18,fontWeight:800,background:C.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>FLINT</span>
-          {profile?.avatar_url&&<img src={profile.avatar_url} style={{width:28,height:28,borderRadius:99,marginLeft:"auto"}}/>}
-        </div>
-        <h2 style={{color:C.t1,fontSize:24,fontWeight:800,marginBottom:4}}>Welcome{profile?.name?`, ${profile.name.split(" ")[0]}`:""}</h2>
-        <p style={{color:C.t3,fontSize:13,marginBottom:24}}>Quick profile setup — powers AI matching and auto-fills applications.</p>
-        {[["role","Target role","Senior SRE / Platform Engineer"],["experience","Years of experience","5"],["skills","Key skills","AWS, K8s, Terraform, Python"],["notice","Notice period","30 days"],["compensation","Current comp","$120k / 25 LPA"],["expected","Expected comp","$150-180k / 40-60 LPA"],["visa","Work authorization","No visa needed"]].map(([k,l,ph])=>(
-          <div key={k} style={{marginBottom:12}}><label style={{fontSize:11,fontWeight:600,color:C.t3,fontFamily:M,display:"block",marginBottom:4}}>{l.toUpperCase()}</label><input value={form[k]} onChange={e=>setForm(p=>({...p,[k]:e.target.value}))} placeholder={ph}/></div>
-        ))}
-        <label style={{fontSize:11,fontWeight:600,color:C.t3,fontFamily:M,display:"block",marginBottom:6}}>WORK MODE</label>
-        <div style={{display:"flex",gap:8,marginBottom:24,flexWrap:"wrap"}}>
-          {["Remote","Hybrid","Onsite","No Preference"].map(m=><Chip key={m} active={form.work_mode===m} onClick={()=>setForm(p=>({...p,work_mode:m}))}>{m}</Chip>)}
-        </div>
-        <button onClick={saveOnboarding} style={{width:"100%",padding:16,background:C.grad,color:"#fff",border:"none",borderRadius:12,fontSize:16,fontWeight:700,cursor:"pointer"}}>Launch FLINT 🔥</button>
-      </div>
-    </div>
-  );
-
-  // Main app
   const nav=[{id:"hunt",ico:"🔍",l:"Hunt"},{id:"tracked",ico:"📋",l:"Tracked"},{id:"vault",ico:"👤",l:"Vault"},{id:"ai",ico:"⚡",l:"AI Lab"}];
-  return (
+  return(
     <div style={{minHeight:"100vh",background:C.bg}}>
+      {/* Header */}
       <div style={{padding:"12px 20px",display:"flex",alignItems:"center",gap:10,borderBottom:`1px solid ${C.br}`}}>
-        <span style={{fontSize:20}}>🔥</span>
-        <span style={{fontSize:18,fontWeight:900,background:C.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>FLINT</span>
-        <div style={{flex:1}}/>
-        <span style={{width:7,height:7,borderRadius:99,background:C.grn,animation:"pulse 2s infinite"}}/>
-        <span style={{fontSize:10,fontFamily:M,color:C.t3}}>LIVE</span>
+        <span style={{fontSize:20}}>🔥</span><span style={{fontSize:18,fontWeight:900,background:C.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>FLINT</span><div style={{flex:1}}/><span style={{width:7,height:7,borderRadius:99,background:C.grn,animation:"pulse 2s infinite"}}/><span style={{fontSize:10,fontFamily:M,color:C.t3}}>LIVE</span>
         <div style={{position:"relative",marginLeft:8}}>
-          <div onClick={()=>setShowMenu(p=>!p)} style={{cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
-            {profile?.avatar_url?<img src={profile.avatar_url} style={{width:28,height:28,borderRadius:99}}/>:<div style={{width:28,height:28,borderRadius:99,background:C.acc+"22",color:C.acc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700}}>{(profile?.name||"U")[0]}</div>}
-            <svg width="12" height="12" fill="none" stroke={C.t3} strokeWidth="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-          </div>
-          {showMenu&&<>
-            <div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setShowMenu(false)}/>
-            <div style={{position:"absolute",right:0,top:40,background:C.c1,border:`1px solid ${C.br}`,borderRadius:12,padding:8,minWidth:200,zIndex:100,animation:"up .15s ease",boxShadow:"0 8px 30px rgba(0,0,0,.5)"}}>
-              <div style={{padding:"10px 12px",borderBottom:`1px solid ${C.br}`,marginBottom:6}}>
-                <div style={{fontSize:14,fontWeight:600,color:C.t1}}>{profile?.name||"User"}</div>
-                <div style={{fontSize:11,color:C.t3,marginTop:2}}>{profile?.email}</div>
-              </div>
-              <button onClick={()=>{setTab("vault");setShowMenu(false);}} style={{width:"100%",padding:"9px 12px",background:"transparent",border:"none",color:C.t1,fontSize:13,textAlign:"left",cursor:"pointer",borderRadius:6,display:"flex",alignItems:"center",gap:8}} onMouseOver={e=>e.currentTarget.style.background=C.c2} onMouseOut={e=>e.currentTarget.style.background="transparent"}>👤 Profile & Vault</button>
-              <button onClick={()=>{setOnboarding(true);setShowMenu(false);}} style={{width:"100%",padding:"9px 12px",background:"transparent",border:"none",color:C.t1,fontSize:13,textAlign:"left",cursor:"pointer",borderRadius:6,display:"flex",alignItems:"center",gap:8}} onMouseOver={e=>e.currentTarget.style.background=C.c2} onMouseOut={e=>e.currentTarget.style.background="transparent"}>✏️ Edit profile</button>
-              <div style={{borderTop:`1px solid ${C.br}`,margin:"6px 0"}}/>
-              <button onClick={async()=>{setShowMenu(false);await supabase.auth.signOut();setUser(null);setProfile(null);setAppliedJobs([]);setApplied([]);setJobs([]);setQA([]);}} style={{width:"100%",padding:"9px 12px",background:"transparent",border:"none",color:C.red,fontSize:13,textAlign:"left",cursor:"pointer",borderRadius:6,display:"flex",alignItems:"center",gap:8,fontWeight:600}} onMouseOver={e=>e.currentTarget.style.background=C.red+"11"} onMouseOut={e=>e.currentTarget.style.background="transparent"}>↩ Sign out</button>
-            </div>
-          </>}
+          <div onClick={()=>setShowMenu(p=>!p)} style={{cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>{profile?.avatar_url?<img src={profile.avatar_url} style={{width:28,height:28,borderRadius:99}}/>:<div style={{width:28,height:28,borderRadius:99,background:C.acc+"22",color:C.acc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700}}>{(profile?.name||"U")[0]}</div>}<svg width="12" height="12" fill="none" stroke={C.t3} strokeWidth="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+          {showMenu&&<><div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setShowMenu(false)}/><div style={{position:"absolute",right:0,top:40,background:C.c1,border:`1px solid ${C.br}`,borderRadius:12,padding:8,minWidth:200,zIndex:100,animation:"up .15s ease",boxShadow:"0 8px 30px rgba(0,0,0,.5)"}}><div style={{padding:"10px 12px",borderBottom:`1px solid ${C.br}`,marginBottom:6}}><div style={{fontSize:14,fontWeight:600,color:C.t1}}>{profile?.name}</div><div style={{fontSize:11,color:C.t3,marginTop:2}}>{profile?.email}</div></div><button onClick={()=>{setTab("vault");setShowMenu(false);}} style={{width:"100%",padding:"9px 12px",background:"transparent",border:"none",color:C.t1,fontSize:13,textAlign:"left",cursor:"pointer",borderRadius:6}}>👤 Profile</button><button onClick={()=>{setOnboarding(true);setShowMenu(false);}} style={{width:"100%",padding:"9px 12px",background:"transparent",border:"none",color:C.t1,fontSize:13,textAlign:"left",cursor:"pointer",borderRadius:6}}>✏️ Edit profile</button><div style={{borderTop:`1px solid ${C.br}`,margin:"6px 0"}}/><button onClick={async()=>{setShowMenu(false);await sb.auth.signOut();setUser(null);setProfile(null);setJobs([]);setQA([]);setApplied([]);setAppliedJobs([]);}} style={{width:"100%",padding:"9px 12px",background:"transparent",border:"none",color:C.red,fontSize:13,textAlign:"left",cursor:"pointer",borderRadius:6,fontWeight:600}}>↩ Sign out</button></div></>}
         </div>
       </div>
-
-      <div style={{display:"flex",borderBottom:`1px solid ${C.br}`,background:C.c1}}>
-        {nav.map(n=><button key={n.id} onClick={()=>setTab(n.id)} style={{flex:1,padding:"10px 4px",display:"flex",flexDirection:"column",alignItems:"center",gap:2,border:"none",background:tab===n.id?C.bg:"transparent",borderBottom:tab===n.id?`2px solid ${C.acc}`:`2px solid transparent`,color:tab===n.id?C.acc:C.t3,cursor:"pointer",fontSize:10,fontWeight:700,fontFamily:M}}><span style={{fontSize:16}}>{n.ico}</span>{n.l}</button>)}
-      </div>
-
+      {/* Nav */}
+      <div style={{display:"flex",borderBottom:`1px solid ${C.br}`,background:C.c1}}>{nav.map(n=><button key={n.id} onClick={()=>setTab(n.id)} style={{flex:1,padding:"10px 4px",display:"flex",flexDirection:"column",alignItems:"center",gap:2,border:"none",background:tab===n.id?C.bg:"transparent",borderBottom:tab===n.id?`2px solid ${C.acc}`:`2px solid transparent`,color:tab===n.id?C.acc:C.t3,cursor:"pointer",fontSize:10,fontWeight:700,fontFamily:M}}><span style={{fontSize:16}}>{n.ico}</span>{n.l}</button>)}</div>
       <div style={{maxWidth:660,margin:"0 auto",padding:"16px 16px 60px"}}>
-        {tab==="hunt"&&<>
-          <div style={{display:"flex",gap:8,marginBottom:10}}>
-            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search jobs..." onKeyDown={e=>e.key==="Enter"&&doSearch()} style={{flex:1,fontSize:15,padding:"13px 16px"}}/>
-            <button onClick={doSearch} disabled={loading} style={{padding:"0 22px",background:loading?C.c2:C.grad,color:loading?C.t3:"#fff",border:"none",borderRadius:8,fontSize:14,fontWeight:800,cursor:loading?"wait":"pointer"}}>HUNT</button>
-          </div>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{QUICK.map(p=><Chip key={p} active={search===p} onClick={()=>setSearch(p)}>{p}</Chip>)}</div>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{CATS.map(c=><Chip key={c} active={cat===c} color={C.pur} onClick={()=>setCat(c)}>{c}</Chip>)}</div>
-
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8,alignItems:"center"}}>
-            <span style={{fontSize:10,fontFamily:M,color:C.t3,letterSpacing:1}}>REGION:</span>
-            {Object.entries(FLAGS).filter(([k])=>k!=="other").map(([cc,flag])=>(
-              <Chip key={cc} active={selCountries.includes(cc)} color={C.blu} onClick={()=>setSelCountries(p=>p.includes(cc)?p.filter(c=>c!==cc):[...p,cc])}>{flag} {cc.toUpperCase()}</Chip>
-            ))}
-          </div>
-
-          <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
-            <button onClick={()=>setRemoteOnly(p=>!p)} style={{padding:"5px 16px",fontSize:12,border:`1px solid ${remoteOnly?C.grn+"55":C.br}`,borderRadius:99,background:remoteOnly?C.grn+"15":"transparent",color:remoteOnly?C.grn:C.t3,cursor:"pointer",fontWeight:600,fontFamily:M,display:"flex",alignItems:"center",gap:5}}>
-              🌍 Remote only{remoteOnly&&" ✓"}
-            </button>
-            {(selCountries.length>0||remoteOnly)&&<button onClick={()=>{setSelCountries([]);setRemoteOnly(false);}} style={{padding:"5px 12px",fontSize:11,border:`1px solid ${C.br}`,borderRadius:99,background:"transparent",color:C.t3,cursor:"pointer"}}>Clear filters</button>}
-          </div>
-          {loading&&<ScanBar/>}
-          {status&&<p style={{fontSize:11,fontFamily:M,color:C.t3,margin:"0 0 12px"}}>{status} · {filtered.length} showing</p>}
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>{filtered.map(j=><JobCard key={j.id} job={j} applied={applied.includes(j.id)} onApply={j=>setApplyM(j)} onMatch={j=>setMatchM(j)}/>)}</div>
-        </>}
-
-        {tab==="tracked"&&<>
-          <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.acc,marginBottom:6}}>YOUR APPLICATIONS</div>
-          <h2 style={{color:C.t1,fontSize:24,fontWeight:800,marginBottom:20}}>{appliedJobs.length} tracked</h2>
-          {appliedJobs.map((j,i)=>(<div key={i} style={{background:C.c1,border:`1px solid ${C.br}`,borderRadius:14,padding:16,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><p style={{fontSize:15,fontWeight:700,color:C.t1}}>{j.title}</p><p style={{fontSize:13,color:C.t2,marginTop:3}}>{j.company} · {j.location}</p><p style={{fontSize:10,color:C.t3,fontFamily:M,marginTop:4}}>{new Date(j.applied_at).toLocaleDateString()} via {j.source}</p></div>              <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                {j.status==="queued"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.acc+"22",color:C.acc}}>⏳ Queued</span>}
-                {j.status==="submitting"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.blu+"22",color:C.blu}}>🔄 Submitting</span>}
-                {j.status==="submitted"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.grn+"22",color:C.grn}}>✅ Submitted</span>}
-                {j.status==="failed"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.red+"22",color:C.red}}>❌ Failed</span>}
-                {j.status==="applied"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.t3+"22",color:C.t3}}>📋 Manual</span>}
-                <a href={j.url} target="_blank" style={{color:C.blu,padding:4}}>↗</a>
-              </div></div>))}
-          {!appliedJobs.length&&<p style={{color:C.t3}}>Apply to jobs from the Hunt tab.</p>}
-        </>}
-
-        {tab==="vault"&&<>
-          <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.acc,marginBottom:6}}>YOUR VAULT</div>
-          <h2 style={{color:C.t1,fontSize:24,fontWeight:800,marginBottom:4}}>Profile & saved answers</h2>
-
-          {/* Resume upload */}
-          <div style={{background:C.c1,border:`1px solid ${profile?.resume_url?C.grn+"44":C.br}`,borderRadius:14,padding:18,margin:"16px 0"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:profile?.resume_url?C.grn:C.acc}}>
-                {profile?.resume_url ? "✓ RESUME UPLOADED" : "📄 UPLOAD YOUR RESUME"}
-              </div>
-            </div>
-            <p style={{color:C.t3,fontSize:12,marginBottom:10}}>Required for Auto Apply. PDF format recommended.</p>
-            <input type="file" accept=".pdf,.doc,.docx" onChange={async(e)=>{
-              const file = e.target.files?.[0];
-              if(!file) return;
-              const url = await db.uploadResume(file);
-              if(url) { setProfile(p=>({...p,resume_url:url})); alert("Resume uploaded!"); }
-              else alert("Upload failed — check file size and format.");
-            }} style={{fontSize:13}} />
-            {profile?.resume_url && <p style={{fontSize:11,color:C.grn,marginTop:8,fontFamily:M}}>✓ {profile.resume_url.split("/").pop()}</p>}
-          </div>
-          <div style={{background:C.c1,border:`1px solid ${C.br}`,borderRadius:14,padding:18,margin:"16px 0"}}>
-            {profile&&Object.entries(profile).filter(([k,v])=>v&&!["id","created_at","updated_at","avatar_url","email"].includes(k)).map(([k,v])=>(<div key={k} style={{marginBottom:10}}><label style={{fontSize:10,fontFamily:M,color:C.t3,textTransform:"uppercase"}}>{k.replace(/_/g," ")}</label><input value={v} onChange={e=>{const np={...profile,[k]:e.target.value};setProfile(np);db.saveProfile({[k]:e.target.value})}} style={{marginTop:3}}/></div>))}
-          </div>
-          <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.pur,marginBottom:10}}>SAVED Q&A ({qa.length})</div>
-          {qa.map(q=>(<div key={q.id} style={{background:C.c1,border:`1px solid ${C.br}`,borderRadius:10,padding:14,marginBottom:8,display:"flex",justifyContent:"space-between"}}><div><p style={{fontSize:12,fontWeight:600,color:C.t2}}>{q.question}</p><p style={{fontSize:14,color:C.acc,marginTop:4}}>{q.answer}</p></div><button onClick={async()=>{await db.deleteQA(q.id);setQA(p=>p.filter(x=>x.id!==q.id));}} style={{background:"none",border:"none",color:C.red,cursor:"pointer",opacity:.6}}>×</button></div>))}
-        </>}
-
-        {tab==="ai"&&<>
-          <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.pur,marginBottom:6}}>AI LAB</div>
-          <h2 style={{color:C.t1,fontSize:24,fontWeight:800,marginBottom:20}}>Career intelligence</h2>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
-            {[{l:"📝 Resume",p:"Write a professional summary."},{l:"🎯 Interview",p:"5 interview questions."},{l:"💰 Salary",p:"Market rate for my role?"},{l:"✉️ Outreach",p:"LinkedIn message to recruiter."}].map(p=><Chip key={p.l} color={C.pur} onClick={()=>{setAiQ(p.p);(async()=>{setAiLd(true);const r=await db.callAI({type:"chat",prompt:p.p,profile});setAiR(r?.text||"Connect AI edge function.");setAiLd(false);})();}}>{p.l}</Chip>)}
-          </div>
-          <textarea value={aiQ} onChange={e=>setAiQ(e.target.value)} placeholder="Ask anything..." rows={3} style={{marginBottom:8,resize:"vertical",lineHeight:1.6}}/>
-          <button onClick={async()=>{setAiLd(true);const r=await db.callAI({type:"chat",prompt:aiQ,profile});setAiR(r?.text||"AI unavailable.");setAiLd(false);}} disabled={aiLd||!aiQ} style={{width:"100%",padding:14,background:aiLd?C.c2:C.grad,color:aiLd?C.t3:"#fff",border:"none",borderRadius:10,fontWeight:700,cursor:aiLd?"wait":"pointer"}}>{aiLd?"Thinking...":"⚡ Run"}</button>
-          {aiR&&<div style={{marginTop:16,background:C.c1,border:`1px solid ${C.br}`,borderRadius:14,padding:18,whiteSpace:"pre-wrap",fontSize:13,lineHeight:1.8,color:C.t2}}>{aiR}</div>}
-        </>}
+        {/* Hunt */}
+        {tab==="hunt"&&<><div style={{display:"flex",gap:8,marginBottom:10}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." onKeyDown={e=>e.key==="Enter"&&doSearch()} style={{flex:1,fontSize:15,padding:"13px 16px"}}/><button onClick={doSearch} disabled={loading} style={{padding:"0 22px",background:loading?C.c2:C.grad,color:loading?C.t3:"#fff",border:"none",borderRadius:8,fontSize:14,fontWeight:800,cursor:loading?"wait":"pointer"}}>HUNT</button></div><div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{QUICK.map(p=><Chip key={p} active={search===p} onClick={()=>setSearch(p)}>{p}</Chip>)}</div><div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{CATS.map(c=><Chip key={c} active={cat===c} color={C.pur} onClick={()=>setCat(c)}>{c}</Chip>)}</div><div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8,alignItems:"center"}}><span style={{fontSize:10,fontFamily:M,color:C.t3}}>REGION:</span>{Object.entries(FLAGS).filter(([k])=>k!=="other").map(([cc,f])=><Chip key={cc} active={selCountries.includes(cc)} color={C.blu} onClick={()=>setSelCountries(p=>p.includes(cc)?p.filter(c=>c!==cc):[...p,cc])}>{f} {cc.toUpperCase()}</Chip>)}</div><div style={{display:"flex",gap:8,marginBottom:12}}><button onClick={()=>setRemoteOnly(p=>!p)} style={{padding:"5px 16px",fontSize:12,border:`1px solid ${remoteOnly?C.grn+"55":C.br}`,borderRadius:99,background:remoteOnly?C.grn+"15":"transparent",color:remoteOnly?C.grn:C.t3,cursor:"pointer",fontWeight:600,fontFamily:M}}>🌍 Remote only{remoteOnly&&" ✓"}</button>{(selCountries.length>0||remoteOnly)&&<button onClick={()=>{setSelCountries([]);setRemoteOnly(false);}} style={{padding:"5px 12px",fontSize:11,border:`1px solid ${C.br}`,borderRadius:99,background:"transparent",color:C.t3,cursor:"pointer"}}>Clear</button>}</div>{loading&&<ScanBar/>}{status&&<p style={{fontSize:11,fontFamily:M,color:C.t3,margin:"0 0 12px"}}>{status} · {filtered.length} showing</p>}<div style={{display:"flex",flexDirection:"column",gap:12}}>{filtered.map(j=><JobCard key={j.id} job={j} applied={applied.includes(j.id)} onApply={j=>setApplyM(j)} onMatch={j=>setMatchM(j)}/>)}</div></>}
+        {/* Tracked */}
+        {tab==="tracked"&&<><div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.acc,marginBottom:6}}>APPLICATIONS</div><h2 style={{color:C.t1,fontSize:24,fontWeight:800,marginBottom:20}}>{appliedJobs.length} tracked</h2>{appliedJobs.map((j,i)=><div key={i} style={{background:C.c1,border:`1px solid ${C.br}`,borderRadius:14,padding:16,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><p style={{fontSize:15,fontWeight:700,color:C.t1}}>{j.title}</p><p style={{fontSize:13,color:C.t2,marginTop:3}}>{j.company} · {j.location}</p><p style={{fontSize:10,color:C.t3,fontFamily:M,marginTop:4}}>{new Date(j.applied_at).toLocaleDateString()} via {j.source}</p></div><div style={{display:"flex",gap:6,alignItems:"center"}}>{j.status==="queued"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.acc+"22",color:C.acc}}>⏳ Queued</span>}{j.status==="submitted"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.grn+"22",color:C.grn}}>✅ Submitted</span>}{j.status==="failed"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.red+"22",color:C.red}}>❌ Failed</span>}{j.status==="applied"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.t3+"22",color:C.t3}}>📋 Manual</span>}<a href={j.url} target="_blank" style={{color:C.blu,padding:4}}>↗</a></div></div>)}{!appliedJobs.length&&<p style={{color:C.t3}}>Apply from the Hunt tab.</p>}</>}
+        {/* Vault */}
+        {tab==="vault"&&<><div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.acc,marginBottom:6}}>VAULT</div><h2 style={{color:C.t1,fontSize:24,fontWeight:800,marginBottom:4}}>Profile & saved answers</h2><div style={{background:C.c1,border:`1px solid ${profile?.resume_url?C.grn+"44":C.br}`,borderRadius:14,padding:18,margin:"16px 0"}}><div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:profile?.resume_url?C.grn:C.acc,marginBottom:10}}>{profile?.resume_url?"✓ RESUME UPLOADED":"📄 UPLOAD RESUME"}</div><p style={{color:C.t3,fontSize:12,marginBottom:10}}>Required for Auto Apply.</p><input type="file" accept=".pdf,.doc,.docx" onChange={async e=>{const f=e.target.files?.[0];if(!f)return;const u=await db.uploadResume(f);if(u)setProfile(p=>({...p,resume_url:u}));}} style={{fontSize:13}}/>{profile?.resume_url&&<p style={{fontSize:11,color:C.grn,marginTop:8,fontFamily:M}}>✓ {profile.resume_url.split("/").pop()}</p>}</div><div style={{background:C.c1,border:`1px solid ${C.br}`,borderRadius:14,padding:18,marginBottom:20}}><div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.t3,marginBottom:12}}>PROFILE</div>{profile&&Object.entries(profile).filter(([k,v])=>v&&!["id","created_at","updated_at","avatar_url","email","resume_url"].includes(k)).map(([k,v])=><div key={k} style={{marginBottom:10}}><label style={{fontSize:10,fontFamily:M,color:C.t3,textTransform:"uppercase"}}>{k.replace(/_/g," ")}</label><input value={v} onChange={e=>{const np={...profile,[k]:e.target.value};setProfile(np);db.saveProfile({[k]:e.target.value});}} style={{marginTop:3}}/></div>)}</div><div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.pur,marginBottom:10}}>SAVED Q&A ({qa.length})</div>{qa.map(q=><div key={q.id} style={{background:C.c1,border:`1px solid ${C.br}`,borderRadius:10,padding:14,marginBottom:8,display:"flex",justifyContent:"space-between"}}><div><p style={{fontSize:12,fontWeight:600,color:C.t2}}>{q.question}</p><p style={{fontSize:14,color:C.acc,marginTop:4}}>{q.answer}</p></div><button onClick={async()=>{await db.deleteQA(q.id);setQA(p=>p.filter(x=>x.id!==q.id));}} style={{background:"none",border:"none",color:C.red,cursor:"pointer",opacity:.6}}>×</button></div>)}</>}
+        {/* AI Lab */}
+        {tab==="ai"&&<><div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.pur,marginBottom:6}}>AI LAB</div><h2 style={{color:C.t1,fontSize:24,fontWeight:800,marginBottom:20}}>Career intelligence</h2><div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>{[{l:"📝 Resume",p:"Write a professional summary."},{l:"🎯 Interview",p:"5 interview questions."},{l:"💰 Salary",p:"Market rate?"},{l:"✉️ Outreach",p:"LinkedIn message."}].map(p=><Chip key={p.l} color={C.pur} onClick={()=>{setAiQ(p.p);(async()=>{setAiLd(true);const r=await db.callAI({type:"chat",prompt:p.p,profile});setAiR(r?.text||"AI unavailable.");setAiLd(false);})();}}>{p.l}</Chip>)}</div><textarea value={aiQ} onChange={e=>setAiQ(e.target.value)} placeholder="Ask anything..." rows={3} style={{marginBottom:8,resize:"vertical",lineHeight:1.6}}/><button onClick={async()=>{setAiLd(true);const r=await db.callAI({type:"chat",prompt:aiQ,profile});setAiR(r?.text||"AI unavailable.");setAiLd(false);}} disabled={aiLd||!aiQ} style={{width:"100%",padding:14,background:aiLd?C.c2:C.grad,color:aiLd?C.t3:"#fff",border:"none",borderRadius:10,fontWeight:700,cursor:aiLd?"wait":"pointer"}}>{aiLd?"Thinking...":"⚡ Run"}</button>{aiR&&<div style={{marginTop:16,background:C.c1,border:`1px solid ${C.br}`,borderRadius:14,padding:18,whiteSpace:"pre-wrap",fontSize:13,lineHeight:1.8,color:C.t2}}>{aiR}</div>}</>}
       </div>
-
-      {applyM&&<ApplyModal job={applyM} qa={qa} profile={profile} onClose={()=>setApplyM(null)} onApply={handleApply}/>}
+      {applyM&&<ApplyModal job={applyM} profile={profile} onClose={()=>setApplyM(null)} onApply={handleApply}/>}
       {matchM&&<MatchModal job={matchM} profile={profile} onClose={()=>setMatchM(null)}/>}
     </div>
   );
 }
-
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
