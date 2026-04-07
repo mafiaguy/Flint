@@ -347,18 +347,127 @@ function JobCard({job,applied,onApply,onMatch}) {
 // APPLY MODAL
 // ═══════════════════════════════════
 function ApplyModal({job,qa,profile,onClose,onApply}) {
+  const hasAPI = /greenhouse|lever|ashby/i.test(job.source || "");
   const jobQuestions = React.useMemo(()=>{
     try { return job.questions ? JSON.parse(job.questions) : []; } catch { return []; }
   },[job]);
 
   const [aiQuestions,setAiQuestions] = useState([]);
-  const [aiLoading,setAiLoading] = useState(true);
-  const [ans,setAns] = useState(()=>{const o={};qa.forEach((_,i)=>o[i]=qa[i].answer||qa[i].a||"");return o});
+  const [aiLoading,setAiLoading] = useState(hasAPI);
   const [jobAns,setJobAns] = useState({});
-  const [extras,setExtras] = useState([]);const [nq,setNq]=useState("");const [na,setNa]=useState("");
   const [cover,setCover] = useState("");const [genL,setGenL] = useState(false);
-  const [showSaved,setShowSaved] = useState(false);
-  const allQ = qa.map(q=>({q:q.question||q.q,a:q.answer||q.a})).concat(extras);
+
+  // Only fetch form fields for Greenhouse/Lever/Ashby — they have real APIs
+  useEffect(()=>{
+    if (!hasAPI) return;
+    (async()=>{
+      setAiLoading(true);
+      let formData = null;
+      if (job.url) formData = await db.scrapeForm(job.url, job.source);
+      if (!formData?.fields?.length && jobQuestions.length > 0) {
+        formData = { fields: jobQuestions.map(q => ({ name: q.name || q.label, label: q.label || q.q, type: q.type || "text", required: q.required || false, options: q.options || [] })), source: job.source };
+      }
+      if (formData?.fields?.length) {
+        setAiQuestions(formData.fields);
+        const r = await db.callAI({ type:"autofill", job:{title:job.title,company:job.company,desc:(job.description||"").slice(0,800)}, profile, questions:formData.fields.map(f=>({label:f.label,type:f.type})) });
+        if(r?.text) { try { const filled = JSON.parse(r.text.replace(/```json|```/g,"").trim()); const a={}; formData.fields.forEach((f,i)=>{ const m=filled.find(x=>f.label?.toLowerCase().includes(x.q?.toLowerCase().slice(0,15))||x.q?.toLowerCase().includes(f.label?.toLowerCase().slice(0,15))); a[i]=m?.a||""; }); setJobAns(a); } catch {} }
+      }
+      setAiLoading(false);
+    })();
+  },[]);
+
+  const gen=async()=>{setGenL(true);const r=await db.callAI({type:"cover",job:{title:job.title,company:job.company,desc:(job.description||"").slice(0,600)},profile});setCover(r?.text||"AI unavailable.");setGenL(false);};
+  const displayQuestions = aiQuestions.length > 0 ? aiQuestions : jobQuestions.map(q=>({label:q.label||q.q,type:q.type||"text",required:q.required,options:q.options||[]}));
+
+  // ── Simple mode: custom career pages (LinkedIn, Adzuna, HN, Career Page) ──
+  if (!hasAPI) {
+    return (
+      <Modal onClose={onClose}>
+        <div style={{textAlign:"center",padding:"10px 0"}}>
+          <div style={{width:56,height:56,borderRadius:14,background:(C.acc)+"15",border:`1px solid ${C.acc}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:900,color:C.acc,margin:"0 auto 16px",fontFamily:M}}>{job.company?.charAt(0)}</div>
+          <h3 style={{color:C.t1,fontSize:20,fontWeight:800,margin:"0 0 4px"}}>{job.title}</h3>
+          <p style={{color:C.t2,fontSize:14}}>{job.company} · {job.location}</p>
+          <p style={{color:C.t3,fontSize:12,margin:"12px 0 24px"}}>This job is on {job.company}'s own career page. Click below to apply directly.</p>
+
+          <a href={job.url} target="_blank" rel="noopener noreferrer" onClick={()=>{onApply(job,"","manual");onClose();}} style={{display:"block",width:"100%",padding:16,background:C.grad,color:"#fff",borderRadius:12,textAlign:"center",fontWeight:800,fontSize:16,textDecoration:"none",marginBottom:10}}>Apply on {job.company} ↗</a>
+
+          <button onClick={()=>{onApply(job,"","manual");onClose();}} style={{width:"100%",padding:12,background:C.c2,color:C.t2,border:`1px solid ${C.br}`,borderRadius:10,fontSize:13,cursor:"pointer"}}>Just track this application</button>
+        </div>
+      </Modal>
+    );
+  }
+
+  // ── Full mode: Greenhouse / Lever / Ashby (have form APIs) ──
+  return (
+    <Modal onClose={onClose}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:20}}>
+        <div>
+          <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.acc,marginBottom:6}}>APPLYING TO</div>
+          <h3 style={{color:C.t1,fontSize:20,fontWeight:800,margin:0}}>{job.title}</h3>
+          <p style={{color:C.t2,fontSize:13,margin:"4px 0 0"}}>{job.company} · {job.location}</p>
+        </div>
+        <button onClick={onClose} style={{background:"none",border:"none",color:C.t3,cursor:"pointer",fontSize:20}}>✕</button>
+      </div>
+
+      {aiLoading ? (
+        <div style={{textAlign:"center",padding:"24px 0"}}>
+          <div style={{width:28,height:28,border:`3px solid ${C.br}`,borderTopColor:C.grn,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
+          <p style={{color:C.t3,fontSize:13,marginTop:10}}>Fetching real form fields from {job.source}...</p>
+        </div>
+      ) : displayQuestions.length > 0 && (
+        <>
+          <div style={{fontSize:10,fontFamily:M,letterSpacing:2,marginBottom:10,display:"flex",alignItems:"center",gap:6,color:C.grn}}>
+            <span style={{width:6,height:6,borderRadius:99,background:C.grn,display:"inline-block"}}/>
+            REAL FORM FIELDS ({displayQuestions.length} from {job.source})
+          </div>
+          {displayQuestions.map((q,i)=>{
+            const isResume = q.type==="file" || /resume|cv|upload/i.test(q.label||"");
+            return (
+              <div key={`dq-${i}`} style={{marginBottom:12}}>
+                <label style={{fontSize:12,fontWeight:600,color:C.t2,display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                  {q.label||q.q} {q.required&&<span style={{color:C.red,fontSize:10}}>required</span>}
+                  <span style={{fontSize:9,fontFamily:M,padding:"1px 6px",borderRadius:99,background:C.grn+"22",color:C.grn}}>real</span>
+                </label>
+                {isResume ? (
+                  <div style={{padding:"10px 14px",border:`1px solid ${profile?.resume_url?C.grn+"55":C.br}`,borderRadius:8,background:C.c1,fontSize:13}}>
+                    {profile?.resume_url
+                      ? <span style={{color:C.grn}}>✓ {profile.resume_url.split("/").pop()} (from Vault)</span>
+                      : <span style={{color:C.acc}}>⚠ Upload resume in Vault tab</span>}
+                  </div>
+                ) : q.type==="select" && q.options?.length ? (
+                  <select value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))} style={{width:"100%",padding:"10px 14px",border:`1px solid ${C.br}`,borderRadius:8,fontSize:14,background:C.c1,color:C.t1}}>
+                    <option value="">Select...</option>
+                    {q.options.map(o=><option key={o.label||o} value={o.value||o.label||o}>{o.label||o}</option>)}
+                  </select>
+                ) : q.type==="textarea" ? (
+                  <textarea value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))} rows={3} style={{resize:"vertical",lineHeight:1.6}}/>
+                ) : (
+                  <div style={{position:"relative"}}>
+                    <input value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))}/>
+                    {jobAns[i]&&<span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:9,fontFamily:M,color:C.pur,background:C.pur+"15",padding:"2px 6px",borderRadius:4}}>AI</span>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"16px 0 8px"}}>
+        <span style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.t3}}>AI COVER LETTER</span>
+        <button onClick={gen} disabled={genL} style={{padding:"6px 16px",background:"transparent",border:`1px solid ${C.pur}55`,borderRadius:8,color:C.pur,cursor:genL?"wait":"pointer",fontSize:12,fontWeight:600}}>⚡ {genL?"...":"Generate"}</button>
+      </div>
+      <textarea value={cover} onChange={e=>setCover(e.target.value)} placeholder="Click Generate or write your own..." rows={4} style={{resize:"vertical",lineHeight:1.6}}/>
+
+      <div style={{display:"flex",gap:10,marginTop:20,flexWrap:"wrap"}}>
+        <a href={job.url} target="_blank" rel="noopener noreferrer" style={{padding:14,background:C.c2,color:C.t1,borderRadius:12,textAlign:"center",fontWeight:700,fontSize:13,border:`1px solid ${C.br}`,display:"block",flex:"1 1 100%"}}>Open on {job.source} ↗</a>
+        <button onClick={()=>{onApply(job,cover,"manual");onClose();}} style={{flex:1,padding:"14px 16px",background:C.c2,color:C.t1,border:`1px solid ${C.br}`,borderRadius:12,fontWeight:700,fontSize:13,cursor:"pointer"}}>📋 Track only</button>
+        <button onClick={async()=>{onApply(job,cover,"auto");const r=await db.triggerApply();if(r?.triggered)console.log("Worker triggered");onClose();}} style={{flex:1,padding:"14px 16px",background:C.grad,color:"#fff",border:"none",borderRadius:12,fontWeight:800,fontSize:13,cursor:"pointer"}}>🚀 Auto Apply</button>
+        {!profile?.resume_url&&<p style={{fontSize:11,color:C.acc,width:"100%",textAlign:"center",margin:0}}>⚠ Upload resume in Vault for auto-apply</p>}
+      </div>
+    </Modal>
+  );
+}
 
   // On mount: scrape REAL form questions from the job URL, then AI-fill answers
   useEffect(()=>{
