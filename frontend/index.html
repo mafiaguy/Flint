@@ -90,10 +90,63 @@ const db = {
     const {data} = await supabase.from("applications").select("*").order("applied_at",{ascending:false});
     return data || [];
   },
-  async addApplication(app) {
+  async uploadResume(file) {
     const {data:{user}} = await supabase.auth.getUser();
-    if(!user) return;
-    await supabase.from("applications").insert({...app,user_id:user.id});
+    if(!user || !file) return null;
+    const filePath = `${user.id}/${file.name}`;
+    const {data,error} = await supabase.storage.from("resumes").upload(filePath, file, {upsert:true});
+    if(error) { console.error("Upload error:",error); return null; }
+    const {data:urlData} = supabase.storage.from("resumes").getPublicUrl(filePath);
+    // Save URL to profile
+    await supabase.from("profiles").update({resume_url: urlData.publicUrl}).eq("id",user.id);
+    return urlData.publicUrl;
+  },
+  async queueApply(job, coverLetter, answers) {
+    const {data:{user}} = await supabase.auth.getUser();
+    if(!user) return null;
+    const profile = await this.getProfile();
+    // Parse Greenhouse board slug + job ID from URL
+    let boardSlug = null, ghJobId = null;
+    const ghMatch = (job.url||"").match(/boards\.greenhouse\.io\/(\w+)\/jobs\/(\d+)/);
+    if(ghMatch) { boardSlug = ghMatch[1]; ghJobId = ghMatch[2]; }
+    return supabase.from("apply_queue").insert({
+      user_id: user.id,
+      job_id: job.id,
+      job_title: job.title,
+      company: job.company,
+      job_url: job.url,
+      source: job.source,
+      board_slug: boardSlug,
+      gh_job_id: ghJobId,
+      cover_letter: coverLetter,
+      answers: answers || {},
+      resume_url: profile?.resume_url || null,
+      status: "pending",
+    });
+  },
+  async getApplyQueue() {
+    const {data} = await supabase.from("apply_queue").select("*").order("created_at",{ascending:false});
+    return data || [];
+  },
+  async scrapeForm(url, source) {
+    try {
+      const r = await fetch(`${CFG.SUPABASE_URL}/functions/v1/scrape-form`,{
+        method:"POST",
+        headers:{Authorization:`Bearer ${CFG.SUPABASE_KEY}`,"Content-Type":"application/json"},
+        body:JSON.stringify({url, source})
+      });
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
+  },
+  async triggerApply() {
+    try {
+      const r = await fetch(`${CFG.SUPABASE_URL}/functions/v1/trigger-apply`,{
+        method:"POST",
+        headers:{Authorization:`Bearer ${CFG.SUPABASE_KEY}`,"Content-Type":"application/json"},
+        body:JSON.stringify({})
+      });
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
   },
   async callAI(body) {
     try {
@@ -282,6 +335,7 @@ function JobCard({job,applied,onApply,onMatch}) {
         {job.category&&<span style={{fontSize:10,fontFamily:M,color:C.t3,background:C.c2,padding:"4px 10px",borderRadius:99}}>{job.category}</span>}
         <div style={{flex:1}}/>
         <button onClick={()=>setExp(!exp)} style={{padding:"7px 14px",fontSize:12,border:`1px solid ${C.br}`,borderRadius:8,background:"transparent",color:C.t2,cursor:"pointer"}}>{exp?"Hide":"Details"}</button>
+        <a href={job.url} target="_blank" rel="noopener noreferrer" style={{padding:"7px 14px",fontSize:12,border:`1px solid ${C.blu}33`,borderRadius:8,color:C.blu,textDecoration:"none",fontWeight:500}}>Career Page ↗</a>
         <button onClick={()=>onMatch(job)} style={{padding:"7px 14px",fontSize:12,border:`1px solid ${C.pur}33`,borderRadius:8,background:"transparent",color:C.pur,cursor:"pointer",fontWeight:600}}>⚡ Match</button>
         <button onClick={()=>onApply(job)} style={{padding:"8px 20px",background:applied?C.grn+"22":C.grad,color:applied?C.grn:"#fff",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer"}}>{applied?"✓ Applied":"Apply →"}</button>
       </div>
@@ -293,18 +347,103 @@ function JobCard({job,applied,onApply,onMatch}) {
 // APPLY MODAL
 // ═══════════════════════════════════
 function ApplyModal({job,qa,profile,onClose,onApply}) {
-  // Parse auto-detected questions from the job listing (Greenhouse API)
   const jobQuestions = React.useMemo(()=>{
     try { return job.questions ? JSON.parse(job.questions) : []; } catch { return []; }
   },[job]);
 
-  const [ans,setAns]=useState(()=>{const o={};qa.forEach((_,i)=>o[i]=qa[i].answer||qa[i].a||"");return o});
-  const [jobAns,setJobAns]=useState(()=>{const o={};jobQuestions.forEach((_,i)=>o[i]="");return o});
-  const [extras,setExtras]=useState([]);const [nq,setNq]=useState("");const [na,setNa]=useState("");
-  const [cover,setCover]=useState("");const [genL,setGenL]=useState(false);
-  const allQ=qa.map(q=>({q:q.question||q.q,a:q.answer||q.a})).concat(extras);
+  const [aiQuestions,setAiQuestions] = useState([]);
+  const [aiLoading,setAiLoading] = useState(true);
+  const [ans,setAns] = useState(()=>{const o={};qa.forEach((_,i)=>o[i]=qa[i].answer||qa[i].a||"");return o});
+  const [jobAns,setJobAns] = useState({});
+  const [extras,setExtras] = useState([]);const [nq,setNq]=useState("");const [na,setNa]=useState("");
+  const [cover,setCover] = useState("");const [genL,setGenL] = useState(false);
+  const allQ = qa.map(q=>({q:q.question||q.q,a:q.answer||q.a})).concat(extras);
+
+  // On mount: scrape REAL form questions from the job URL, then AI-fill answers
+  useEffect(()=>{
+    (async()=>{
+      setAiLoading(true);
+
+      // Step 1: Fetch the REAL application form fields
+      let formData = null;
+      if (job.url) {
+        formData = await db.scrapeForm(job.url, job.source);
+      }
+
+      // Also check if we have scraped questions from the DB
+      if (!formData?.fields?.length && jobQuestions.length > 0) {
+        formData = {
+          fields: jobQuestions.map(q => ({
+            name: q.name || q.label,
+            label: q.label || q.q,
+            type: q.type || "text",
+            required: q.required || false,
+            options: q.options || [],
+          })),
+          source: job.source,
+        };
+      }
+
+      if (formData?.fields?.length) {
+        setAiQuestions(formData.fields);
+
+        // Step 2: Ask AI to fill answers for the real fields
+        const r = await db.callAI({
+          type: "autofill",
+          job: { title: job.title, company: job.company, desc: (job.description || "").slice(0, 800) },
+          profile,
+          questions: formData.fields.map(f => ({ label: f.label, type: f.type })),
+        });
+
+        if (r?.text) {
+          try {
+            const clean = r.text.replace(/```json|```/g, "").trim();
+            const filled = JSON.parse(clean);
+            const newAns = {};
+            // Match AI answers to fields by label
+            formData.fields.forEach((field, i) => {
+              const match = filled.find(f =>
+                f.q?.toLowerCase().includes(field.label?.toLowerCase().slice(0, 15)) ||
+                field.label?.toLowerCase().includes(f.q?.toLowerCase().slice(0, 15))
+              );
+              newAns[i] = match?.a || "";
+            });
+            setJobAns(newAns);
+          } catch {}
+        }
+      } else {
+        // Fallback: AI predicts questions
+        const r = await db.callAI({
+          type: "questions",
+          job: { title: job.title, company: job.company, location: job.location, desc: (job.description || "").slice(0, 1200) },
+          profile,
+        });
+        if (r?.text) {
+          try {
+            const clean = r.text.replace(/```json|```/g, "").trim();
+            const predicted = JSON.parse(clean);
+            setAiQuestions(predicted.map(p => ({
+              name: p.q?.slice(0, 20),
+              label: p.q,
+              type: "text",
+              required: false,
+              confidence: p.confidence,
+            })));
+            const newAns = {};
+            predicted.forEach((p, i) => { newAns[i] = p.a || ""; });
+            setJobAns(newAns);
+          } catch {}
+        }
+      }
+
+      setAiLoading(false);
+    })();
+  },[]);
 
   const gen=async()=>{setGenL(true);const r=await db.callAI({type:"cover",job:{title:job.title,company:job.company,desc:(job.description||"").slice(0,600)},profile});setCover(r?.text||"AI unavailable.");setGenL(false);};
+
+  const displayQuestions = jobQuestions.length > 0 ? jobQuestions : aiQuestions;
+  const isAiPredicted = jobQuestions.length === 0 && aiQuestions.length > 0;
 
   return (
     <Modal onClose={onClose}>
@@ -317,31 +456,61 @@ function ApplyModal({job,qa,profile,onClose,onApply}) {
         <button onClick={onClose} style={{background:"none",border:"none",color:C.t3,cursor:"pointer",fontSize:20}}>✕</button>
       </div>
 
-      {/* Auto-detected questions from the job application form */}
-      {jobQuestions.length > 0 && <>
-        <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.grn,marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
-          <span style={{width:6,height:6,borderRadius:99,background:C.grn,display:"inline-block"}}/>
-          APPLICATION FORM QUESTIONS ({jobQuestions.length} detected from {job.source})
+      {/* Application form questions (scraped or AI-predicted) */}
+      {aiLoading ? (
+        <div style={{textAlign:"center",padding:"24px 0"}}>
+          <div style={{width:28,height:28,border:`3px solid ${C.br}`,borderTopColor:C.pur,borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto"}}/>
+          <p style={{color:C.t3,fontSize:13,marginTop:10}}>
+            {jobQuestions.length > 0 ? "AI is filling answers from your profile..." : "AI is predicting application questions..."}
+          </p>
         </div>
-        {jobQuestions.map((q,i)=>(
-          <div key={`jq-${i}`} style={{marginBottom:10}}>
-            <label style={{fontSize:12,fontWeight:600,color:C.t2,display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
-              {q.label} {q.required&&<span style={{color:C.red,fontSize:10}}>required</span>}
-            </label>
-            {q.type==="multi_value_single_select" && q.options?.length > 0 ? (
-              <select value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))} style={{width:"100%",padding:"10px 14px",border:`1px solid ${C.br}`,borderRadius:8,fontSize:14,background:C.c1,color:C.t1}}>
-                <option value="">Select...</option>
-                {q.options.map(o=><option key={o} value={o}>{o}</option>)}
-              </select>
-            ) : (
-              <input value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))} placeholder={q.type==="long_text"?"Type your answer...":""}/>
-            )}
+      ) : displayQuestions.length > 0 && (
+        <>
+          <div style={{fontSize:10,fontFamily:M,letterSpacing:2,marginBottom:10,display:"flex",alignItems:"center",gap:6,color:isAiPredicted?C.pur:C.grn}}>
+            <span style={{width:6,height:6,borderRadius:99,background:isAiPredicted?C.pur:C.grn,display:"inline-block"}}/>
+            {isAiPredicted
+              ? `AI-PREDICTED QUESTIONS (${displayQuestions.length} likely form fields)`
+              : `APPLICATION FORM QUESTIONS (${displayQuestions.length} detected from ${job.source})`
+            }
           </div>
-        ))}
-        <div style={{borderTop:`1px solid ${C.br}`,margin:"16px 0"}}/>
-      </>}
+          {isAiPredicted && (
+            <p style={{fontSize:12,color:C.t3,margin:"0 0 12px",lineHeight:1.5}}>
+              These are questions the application form will likely ask. Answers are pre-filled from your profile — review and edit before applying.
+            </p>
+          )}
+          {displayQuestions.map((q,i)=>(
+            <div key={`dq-${i}`} style={{marginBottom:12}}>
+              <label style={{fontSize:12,fontWeight:600,color:C.t2,display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                {q.label || q.q}
+                {q.required && <span style={{color:C.red,fontSize:10}}>required</span>}
+                {isAiPredicted && q.confidence && (
+                  <span style={{fontSize:9,fontFamily:M,padding:"1px 6px",borderRadius:99,
+                    background:q.confidence==="high"?C.grn+"22":q.confidence==="medium"?C.acc+"22":C.br,
+                    color:q.confidence==="high"?C.grn:q.confidence==="medium"?C.acc:C.t3,
+                  }}>{q.confidence}</span>
+                )}
+              </label>
+              {q.type==="multi_value_single_select" && q.options?.length > 0 ? (
+                <select value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))} style={{width:"100%",padding:"10px 14px",border:`1px solid ${C.br}`,borderRadius:8,fontSize:14,background:C.c1,color:C.t1}}>
+                  <option value="">Select...</option>
+                  {q.options.map(o=><option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : (
+                <div style={{position:"relative"}}>
+                  <input value={jobAns[i]||""} onChange={e=>setJobAns(p=>({...p,[i]:e.target.value}))}
+                    style={{paddingRight:isAiPredicted&&jobAns[i]?50:14}}/>
+                  {isAiPredicted && jobAns[i] && (
+                    <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:9,fontFamily:M,color:C.pur,background:C.pur+"15",padding:"2px 6px",borderRadius:4}}>AI</span>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+          <div style={{borderTop:`1px solid ${C.br}`,margin:"16px 0"}}/>
+        </>
+      )}
 
-      {/* User's saved Q&A (auto-filled) */}
+      {/* User's saved Q&A */}
       <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.t3,marginBottom:10}}>YOUR SAVED ANSWERS</div>
       {allQ.map((q,i)=>(<div key={i} style={{marginBottom:10}}><label style={{fontSize:12,fontWeight:600,color:C.t2,display:"block",marginBottom:3}}>{q.q}</label><input value={ans[i]??q.a} onChange={e=>setAns(p=>({...p,[i]:e.target.value}))}/></div>))}
 
@@ -360,10 +529,18 @@ function ApplyModal({job,qa,profile,onClose,onApply}) {
       </div>
       <textarea value={cover} onChange={e=>setCover(e.target.value)} placeholder="Click Generate or write your own..." rows={5} style={{resize:"vertical",lineHeight:1.6}}/>
 
-      <div style={{display:"flex",gap:10,marginTop:20}}>
-        <a href={job.url} target="_blank" rel="noopener noreferrer" style={{flex:1,padding:14,background:C.c2,color:C.t1,borderRadius:12,textAlign:"center",fontWeight:700,fontSize:14,border:`1px solid ${C.br}`,display:"block"}}>Open on {job.source} ↗</a>
-        <button onClick={()=>{onApply(job,cover);onClose();}} style={{padding:"14px 28px",background:C.grn,color:"#000",border:"none",borderRadius:12,fontWeight:800,fontSize:14,cursor:"pointer"}}>✓ Applied</button>
+      <div style={{display:"flex",gap:10,marginTop:20,flexWrap:"wrap"}}>
+        <a href={job.url} target="_blank" rel="noopener noreferrer" style={{padding:14,background:C.c2,color:C.t1,borderRadius:12,textAlign:"center",fontWeight:700,fontSize:13,border:`1px solid ${C.br}`,display:"block",flex:"1 1 100%"}}>Open on {job.source} ↗</a>
+        <button onClick={()=>{onApply(job,cover,"manual");onClose();}} style={{flex:1,padding:"14px 16px",background:C.c2,color:C.t1,border:`1px solid ${C.br}`,borderRadius:12,fontWeight:700,fontSize:13,cursor:"pointer"}}>📋 Track only</button>
+        <button onClick={async()=>{
+          onApply(job,cover,"auto");
+          // Trigger GitHub Actions worker immediately
+          const r = await db.triggerApply();
+          if(r?.triggered) console.log("Auto-apply worker triggered!");
+          onClose();
+        }} style={{flex:1,padding:"14px 16px",background:C.grad,color:"#fff",border:"none",borderRadius:12,fontWeight:800,fontSize:13,cursor:"pointer"}}>🚀 Auto Apply</button>
       </div>
+      {!profile?.resume_url && <p style={{fontSize:11,color:C.acc,marginTop:8,textAlign:"center"}}>⚠ Upload your resume in the Vault tab for auto-apply to work</p>}
     </Modal>
   );
 }
@@ -548,13 +725,38 @@ function App() {
         {tab==="tracked"&&<>
           <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.acc,marginBottom:6}}>YOUR APPLICATIONS</div>
           <h2 style={{color:C.t1,fontSize:24,fontWeight:800,marginBottom:20}}>{appliedJobs.length} tracked</h2>
-          {appliedJobs.map((j,i)=>(<div key={i} style={{background:C.c1,border:`1px solid ${C.br}`,borderRadius:14,padding:16,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><p style={{fontSize:15,fontWeight:700,color:C.t1}}>{j.title}</p><p style={{fontSize:13,color:C.t2,marginTop:3}}>{j.company} · {j.location}</p><p style={{fontSize:10,color:C.t3,fontFamily:M,marginTop:4}}>{new Date(j.applied_at).toLocaleDateString()} via {j.source}</p></div><a href={j.url} target="_blank" style={{color:C.blu,padding:8}}>↗</a></div>))}
+          {appliedJobs.map((j,i)=>(<div key={i} style={{background:C.c1,border:`1px solid ${C.br}`,borderRadius:14,padding:16,marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><p style={{fontSize:15,fontWeight:700,color:C.t1}}>{j.title}</p><p style={{fontSize:13,color:C.t2,marginTop:3}}>{j.company} · {j.location}</p><p style={{fontSize:10,color:C.t3,fontFamily:M,marginTop:4}}>{new Date(j.applied_at).toLocaleDateString()} via {j.source}</p></div>              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                {j.status==="queued"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.acc+"22",color:C.acc}}>⏳ Queued</span>}
+                {j.status==="submitting"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.blu+"22",color:C.blu}}>🔄 Submitting</span>}
+                {j.status==="submitted"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.grn+"22",color:C.grn}}>✅ Submitted</span>}
+                {j.status==="failed"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.red+"22",color:C.red}}>❌ Failed</span>}
+                {j.status==="applied"&&<span style={{fontSize:10,fontFamily:M,padding:"2px 8px",borderRadius:99,background:C.t3+"22",color:C.t3}}>📋 Manual</span>}
+                <a href={j.url} target="_blank" style={{color:C.blu,padding:4}}>↗</a>
+              </div></div>))}
           {!appliedJobs.length&&<p style={{color:C.t3}}>Apply to jobs from the Hunt tab.</p>}
         </>}
 
         {tab==="vault"&&<>
           <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:C.acc,marginBottom:6}}>YOUR VAULT</div>
           <h2 style={{color:C.t1,fontSize:24,fontWeight:800,marginBottom:4}}>Profile & saved answers</h2>
+
+          {/* Resume upload */}
+          <div style={{background:C.c1,border:`1px solid ${profile?.resume_url?C.grn+"44":C.br}`,borderRadius:14,padding:18,margin:"16px 0"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{fontSize:10,fontFamily:M,letterSpacing:2,color:profile?.resume_url?C.grn:C.acc}}>
+                {profile?.resume_url ? "✓ RESUME UPLOADED" : "📄 UPLOAD YOUR RESUME"}
+              </div>
+            </div>
+            <p style={{color:C.t3,fontSize:12,marginBottom:10}}>Required for Auto Apply. PDF format recommended.</p>
+            <input type="file" accept=".pdf,.doc,.docx" onChange={async(e)=>{
+              const file = e.target.files?.[0];
+              if(!file) return;
+              const url = await db.uploadResume(file);
+              if(url) { setProfile(p=>({...p,resume_url:url})); alert("Resume uploaded!"); }
+              else alert("Upload failed — check file size and format.");
+            }} style={{fontSize:13}} />
+            {profile?.resume_url && <p style={{fontSize:11,color:C.grn,marginTop:8,fontFamily:M}}>✓ {profile.resume_url.split("/").pop()}</p>}
+          </div>
           <div style={{background:C.c1,border:`1px solid ${C.br}`,borderRadius:14,padding:18,margin:"16px 0"}}>
             {profile&&Object.entries(profile).filter(([k,v])=>v&&!["id","created_at","updated_at","avatar_url","email"].includes(k)).map(([k,v])=>(<div key={k} style={{marginBottom:10}}><label style={{fontSize:10,fontFamily:M,color:C.t3,textTransform:"uppercase"}}>{k.replace(/_/g," ")}</label><input value={v} onChange={e=>{const np={...profile,[k]:e.target.value};setProfile(np);db.saveProfile({[k]:e.target.value})}} style={{marginTop:3}}/></div>))}
           </div>
