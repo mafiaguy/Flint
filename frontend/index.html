@@ -689,12 +689,19 @@ function App() {
             {profile?.avatar_url?<img src={profile.avatar_url} style={{width:28,height:28,borderRadius:99}}/>:<div style={{width:28,height:28,borderRadius:99,background:C.acc+"22",color:C.acc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700}}>{(profile?.name||"U")[0]}</div>}
             <svg width="12" height="12" fill="none" stroke={C.t3} strokeWidth="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
           </div>
-          {showMenu&&<div style={{position:"absolute",right:0,top:36,background:C.c1,border:`1px solid ${C.br}`,borderRadius:12,padding:8,minWidth:180,zIndex:100,animation:"up .2s ease"}}>
-            <div style={{padding:"8px 12px",fontSize:13,color:C.t2,borderBottom:`1px solid ${C.br}`,marginBottom:4}}>{profile?.name||"User"}<br/><span style={{fontSize:11,color:C.t3}}>{profile?.email}</span></div>
-            <button onClick={()=>{setTab("vault");setShowMenu(false);}} style={{width:"100%",padding:"8px 12px",background:"transparent",border:"none",color:C.t1,fontSize:13,textAlign:"left",cursor:"pointer",borderRadius:8}}>👤 Profile & vault</button>
-            <button onClick={()=>{setOnboarding(true);setShowMenu(false);}} style={{width:"100%",padding:"8px 12px",background:"transparent",border:"none",color:C.t1,fontSize:13,textAlign:"left",cursor:"pointer",borderRadius:8}}>✏️ Edit onboarding</button>
-            <button onClick={()=>{signOut();setShowMenu(false);}} style={{width:"100%",padding:"8px 12px",background:"transparent",border:"none",color:C.red,fontSize:13,textAlign:"left",cursor:"pointer",borderRadius:8,marginTop:4,borderTop:`1px solid ${C.br}`,borderRadius:0}}>↩ Sign out</button>
-          </div>}
+          {showMenu&&<>
+            <div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setShowMenu(false)}/>
+            <div style={{position:"absolute",right:0,top:40,background:C.c1,border:`1px solid ${C.br}`,borderRadius:12,padding:8,minWidth:200,zIndex:100,animation:"up .15s ease",boxShadow:"0 8px 30px rgba(0,0,0,.5)"}}>
+              <div style={{padding:"10px 12px",borderBottom:`1px solid ${C.br}`,marginBottom:6}}>
+                <div style={{fontSize:14,fontWeight:600,color:C.t1}}>{profile?.name||"User"}</div>
+                <div style={{fontSize:11,color:C.t3,marginTop:2}}>{profile?.email}</div>
+              </div>
+              <button onClick={()=>{setTab("vault");setShowMenu(false);}} style={{width:"100%",padding:"9px 12px",background:"transparent",border:"none",color:C.t1,fontSize:13,textAlign:"left",cursor:"pointer",borderRadius:6,display:"flex",alignItems:"center",gap:8}} onMouseOver={e=>e.currentTarget.style.background=C.c2} onMouseOut={e=>e.currentTarget.style.background="transparent"}>👤 Profile & Vault</button>
+              <button onClick={()=>{setOnboarding(true);setShowMenu(false);}} style={{width:"100%",padding:"9px 12px",background:"transparent",border:"none",color:C.t1,fontSize:13,textAlign:"left",cursor:"pointer",borderRadius:6,display:"flex",alignItems:"center",gap:8}} onMouseOver={e=>e.currentTarget.style.background=C.c2} onMouseOut={e=>e.currentTarget.style.background="transparent"}>✏️ Edit profile</button>
+              <div style={{borderTop:`1px solid ${C.br}`,margin:"6px 0"}}/>
+              <button onClick={async()=>{setShowMenu(false);await supabase.auth.signOut();setUser(null);setProfile(null);setAppliedJobs([]);setApplied([]);setJobs([]);setQA([]);}} style={{width:"100%",padding:"9px 12px",background:"transparent",border:"none",color:C.red,fontSize:13,textAlign:"left",cursor:"pointer",borderRadius:6,display:"flex",alignItems:"center",gap:8,fontWeight:600}} onMouseOver={e=>e.currentTarget.style.background=C.red+"11"} onMouseOut={e=>e.currentTarget.style.background="transparent"}>↩ Sign out</button>
+            </div>
+          </>}
         </div>
       </div>
 
