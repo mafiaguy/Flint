@@ -422,63 +422,68 @@ async function scrapeLinkedIn(browser) {
 
 async function scrapeApify() {
   if (!APIFY_TOKEN) { console.log("\n⏭  [Apify] No token"); return []; }
-  console.log("\n🤖 [Apify] Fetching LinkedIn jobs (harvestapi actor)...");
+  console.log("\n🤖 [Apify] Fetching LinkedIn jobs (small batches)...");
   const all = [];
 
-  // Actor: harvestapi~linkedin-job-search
-  // Correct input: titles[] + locations[] (NOT searchUrl)
-  // Cost: ~$1 per 1000 jobs. $5 free credits = ~5000 jobs/month
-  const input = {
-    titles: [
-      "Software Engineer",
-      "DevOps Engineer",
-      "Site Reliability Engineer",
-      "Platform Engineer",
-      "Cloud Engineer",
-      "Data Engineer",
-      "Backend Engineer",
-    ],
-    locations: ["India", "United Kingdom", "Germany", "United States", "Remote"],
-    publishedAt: "past Week",
-    rows: 100,
-  };
+  // Split into small batches — 2 titles per location, 180s timeout each
+  const batches = [
+    { titles: ["Software Engineer", "Backend Engineer"], locations: ["India"], rows: 30 },
+    { titles: ["DevOps Engineer", "SRE"], locations: ["India"], rows: 30 },
+    { titles: ["Software Engineer", "Cloud Engineer"], locations: ["United Kingdom"], rows: 30 },
+    { titles: ["Software Engineer", "Data Engineer"], locations: ["Germany"], rows: 30 },
+    { titles: ["Platform Engineer", "DevOps Engineer"], locations: ["United States"], rows: 30 },
+    { titles: ["Software Engineer Remote", "DevOps Remote"], locations: [""], rows: 30 },
+  ];
 
-  try {
-    const r = await fetch(
-      `https://api.apify.com/v2/acts/harvestapi~linkedin-job-search/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=120`,
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }
-    );
+  for (const batch of batches) {
+    try {
+      const r = await fetch(
+        `https://api.apify.com/v2/acts/harvestapi~linkedin-job-search/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=180`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            titles: batch.titles,
+            locations: batch.locations,
+            publishedAt: "past Week",
+            rows: batch.rows,
+          }),
+        }
+      );
 
-    if (!r.ok) {
-      console.error(`  ✗ Apify HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
-      return [];
-    }
+      if (!r.ok) {
+        const errText = (await r.text()).slice(0, 100);
+        console.error(`  ✗ Apify ${batch.titles[0]}/${batch.locations[0] || "Remote"}: ${r.status} ${errText}`);
+        continue;
+      }
 
-    const data = await r.json();
-    for (const j of data || []) {
-      const title = j.title || j.position || "";
-      const company = j.companyName || j.company || "";
-      if (!title) continue;
+      const data = await r.json();
+      for (const j of data || []) {
+        const title = j.title || j.position || "";
+        const company = j.companyName || j.company || "";
+        if (!title) continue;
+        all.push({
+          id: makeId("ap", title, company),
+          title, company,
+          location: j.location || j.formattedLocation || "",
+          country: detectCountry(j.location || j.formattedLocation || ""),
+          description: j.description || "",
+          url: j.url || j.jobUrl || j.link || "",
+          salary: j.salary || j.salaryText || "—",
+          source: "LinkedIn",
+          posted: j.publishedAt || j.postedAt || today(),
+          category: categorize(title),
+          remote: /remote/i.test(j.location || "") || /remote/i.test(j.workplaceType || ""),
+          questions: null,
+        });
+      }
 
-      all.push({
-        id: makeId("ap", title, company),
-        title, company,
-        location: j.location || j.formattedLocation || "",
-        country: detectCountry(j.location || j.formattedLocation || ""),
-        description: j.description || "",
-        url: j.url || j.jobUrl || j.link || "",
-        salary: j.salary || j.salaryText || "—",
-        source: "LinkedIn",
-        posted: j.publishedAt || j.postedAt || today(),
-        category: categorize(title),
-        remote: /remote/i.test(j.location || "") || /remote/i.test(j.workplaceType || ""),
-        questions: null,
-      });
-    }
+      console.log(`  ✓ ${batch.titles.join("+")} / ${batch.locations[0] || "Remote"} → ${(data || []).length} jobs`);
+      await sleep(3000); // Courtesy pause between runs
+    } catch (e) { console.error(`  ✗ Apify: ${e.message}`); }
+  }
 
-    console.log(`  ✓ ${all.length} jobs from Apify`);
-  } catch (e) { console.error(`  ✗ Apify: ${e.message}`); }
-
+  console.log(`  📦 Apify total: ${all.length} jobs`);
   return all;
 }
 
