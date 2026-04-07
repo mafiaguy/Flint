@@ -47,7 +47,9 @@ const TECH_REGEX =
 // VERIFIED GREENHOUSE BOARDS (removed all 404s, added new)
 // Test any slug: https://boards-api.greenhouse.io/v1/boards/{slug}/jobs
 // ═══════════════════════════════════════════════════════════
+// Only boards confirmed working (removed all 404s from previous run)
 const GREENHOUSE = [
+  // ── Confirmed working ──
   { slug: "cloudflare", name: "Cloudflare" },
   { slug: "datadog", name: "Datadog" },
   { slug: "gitlab", name: "GitLab" },
@@ -62,58 +64,40 @@ const GREENHOUSE = [
   { slug: "newrelic", name: "New Relic" },
   { slug: "yugabyte", name: "YugabyteDB" },
   { slug: "groww", name: "Groww" },
-  { slug: "cred", name: "CRED" },
-  { slug: "zomato", name: "Zomato" },
-  { slug: "swiggy", name: "Swiggy" },
-  { slug: "razorpay22", name: "Razorpay" },
-  { slug: "meesho", name: "Meesho" },
-  { slug: "twilio", name: "Twilio" },
-  { slug: "stripe", name: "Stripe" },
-  { slug: "figma", name: "Figma" },
-  { slug: "discord", name: "Discord" },
-  { slug: "airbnb", name: "Airbnb" },
-  { slug: "uber", name: "Uber" },
-  { slug: "lyft", name: "Lyft" },
-  { slug: "doordash", name: "DoorDash" },
-  { slug: "coinbase", name: "Coinbase" },
-  { slug: "okta", name: "Okta" },
-  { slug: "atlassian", name: "Atlassian" },
-  { slug: "canva", name: "Canva" },
-  { slug: "plaid", name: "Plaid" },
-  { slug: "airtable", name: "Airtable" },
-  { slug: "retool", name: "Retool" },
-  { slug: "vanta", name: "Vanta" },
-  { slug: "benchling", name: "Benchling" },
+  // ── Moved from Lever (confirmed on Greenhouse now) ──
+  { slug: "vercel", name: "Vercel" },
+  { slug: "anthropic", name: "Anthropic" },
+  // ── Add more verified slugs below ──
+  // To test: curl https://boards-api.greenhouse.io/v1/boards/SLUG/jobs
 ];
 
 // ═══════════════════════════════════════════════════════════
 // VERIFIED LEVER BOARDS
 // Test: https://api.lever.co/v0/postings/{slug}?mode=json
 // ═══════════════════════════════════════════════════════════
+// All previous Lever boards returned 404 — companies moved to Ashby/Greenhouse
+// To find new Lever companies: curl https://api.lever.co/v0/postings/SLUG?mode=json
 const LEVER = [
-  { slug: "vercel", name: "Vercel" },
-  { slug: "neondb", name: "Neon" },
-  { slug: "temporal", name: "Temporal" },
-  { slug: "supabase", name: "Supabase" },
-  { slug: "netlify", name: "Netlify" },
-  { slug: "prisma", name: "Prisma" },
-  { slug: "upstash", name: "Upstash" },
-  { slug: "bitwarden", name: "Bitwarden" },
+  // Add verified Lever boards here as you find them
 ];
 
 // ═══════════════════════════════════════════════════════════
 // VERIFIED ASHBY BOARDS
 // Test: https://api.ashbyhq.com/posting-api/job-board/{slug}
 // ═══════════════════════════════════════════════════════════
+// Confirmed working + fixed slugs
 const ASHBY = [
+  // ── Confirmed working from last run ──
   { slug: "notion", name: "Notion" },
   { slug: "ramp", name: "Ramp" },
   { slug: "linear", name: "Linear" },
-  { slug: "anthropic", name: "Anthropic" },
   { slug: "openai", name: "OpenAI" },
-  { slug: "perplexityai", name: "Perplexity" },
-  { slug: "replicate", name: "Replicate" },
   { slug: "resend", name: "Resend" },
+  // ── Moved from Lever (confirmed on Ashby) ──
+  { slug: "supabase", name: "Supabase" },
+  // ── Fixed slugs ──
+  { slug: "perplexity", name: "Perplexity" },
+  // To test: curl https://api.ashbyhq.com/posting-api/job-board/SLUG
 ];
 
 // ═══════════════════════════════════════════════════════════
@@ -438,63 +422,63 @@ async function scrapeLinkedIn(browser) {
 
 async function scrapeApify() {
   if (!APIFY_TOKEN) { console.log("\n⏭  [Apify] No token"); return []; }
-  console.log("\n🤖 [Apify] Fetching via LinkedIn actor...");
+  console.log("\n🤖 [Apify] Fetching LinkedIn jobs (harvestapi actor)...");
   const all = [];
 
-  const searches = [
-    { query: "Software Engineer", location: "India" },
-    { query: "DevOps Engineer", location: "India" },
-    { query: "Software Engineer", location: "United Kingdom" },
-    { query: "Cloud Engineer", location: "Germany" },
-    { query: "Software Engineer Remote", location: "" },
-  ];
+  // Actor: harvestapi~linkedin-job-search
+  // Correct input: titles[] + locations[] (NOT searchUrl)
+  // Cost: ~$1 per 1000 jobs. $5 free credits = ~5000 jobs/month
+  const input = {
+    titles: [
+      "Software Engineer",
+      "DevOps Engineer",
+      "Site Reliability Engineer",
+      "Platform Engineer",
+      "Cloud Engineer",
+      "Data Engineer",
+      "Backend Engineer",
+    ],
+    locations: ["India", "United Kingdom", "Germany", "United States", "Remote"],
+    publishedAt: "past Week",
+    rows: 100,
+  };
 
-  for (const s of searches) {
-    try {
-      // Use the correct actor input format
-      const input = {
-        title: s.query,
-        location: s.location,
-        rows: 20,
-        proxy: { useApifyProxy: true },
-      };
+  try {
+    const r = await fetch(
+      `https://api.apify.com/v2/acts/harvestapi~linkedin-job-search/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=120`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }
+    );
 
-      const r = await fetch(
-        `https://api.apify.com/v2/acts/bebity~linkedin-jobs-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=120`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }
-      );
+    if (!r.ok) {
+      console.error(`  ✗ Apify HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
+      return [];
+    }
 
-      if (!r.ok) {
-        console.error(`  ✗ Apify ${s.query}/${s.location}: HTTP ${r.status}`);
-        continue;
-      }
+    const data = await r.json();
+    for (const j of data || []) {
+      const title = j.title || j.position || "";
+      const company = j.companyName || j.company || "";
+      if (!title) continue;
 
-      const data = await r.json();
-      for (const j of data || []) {
-        const title = j.title || j.position || "";
-        const company = j.company || j.organization || "";
-        if (!title) continue;
+      all.push({
+        id: makeId("ap", title, company),
+        title, company,
+        location: j.location || j.formattedLocation || "",
+        country: detectCountry(j.location || j.formattedLocation || ""),
+        description: j.description || "",
+        url: j.url || j.jobUrl || j.link || "",
+        salary: j.salary || j.salaryText || "—",
+        source: "LinkedIn",
+        posted: j.publishedAt || j.postedAt || today(),
+        category: categorize(title),
+        remote: /remote/i.test(j.location || "") || /remote/i.test(j.workplaceType || ""),
+        questions: null,
+      });
+    }
 
-        all.push({
-          id: makeId("ap", title, company),
-          title, company,
-          location: j.location || j.place || s.location,
-          country: detectCountry(j.location || s.location),
-          description: j.description || j.descriptionText || "",
-          url: j.link || j.url || j.jobUrl || "",
-          salary: j.salary || "—",
-          source: "LinkedIn",
-          posted: j.date || j.publishedAt || today(),
-          category: categorize(title),
-          remote: /remote/i.test(j.location || ""),
-          questions: null,
-        });
-      }
+    console.log(`  ✓ ${all.length} jobs from Apify`);
+  } catch (e) { console.error(`  ✗ Apify: ${e.message}`); }
 
-      console.log(`  ✓ "${s.query}" / ${s.location || "Remote"} → ${(data || []).length} jobs`);
-      await sleep(5000);
-    } catch (e) { console.error(`  ✗ Apify: ${e.message}`); }
-  }
   return all;
 }
 
