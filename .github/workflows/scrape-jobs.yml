@@ -1,0 +1,53 @@
+name: 🔥 FLINT Job Scraper
+
+on:
+  schedule:
+    # Runs every 8 hours (3x per day)
+    # Minute 15 to avoid the hourly rush
+    - cron: '15 */8 * * *'
+  
+  # Manual trigger from Actions tab
+  workflow_dispatch:
+
+# Prevent multiple runs from overlapping
+concurrency:
+  group: scraper
+  cancel-in-progress: true
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 📥 Checkout repo
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: scraper/package-lock.json
+
+      - name: 📦 Install dependencies
+        working-directory: ./scraper
+        run: npm ci || npm install
+
+      - name: 🎭 Install Playwright Chromium
+        working-directory: ./scraper
+        run: npx playwright install chromium --with-deps
+
+      - name: 🔥 Run FLINT scraper
+        working-directory: ./scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        run: node scrape.js
+
+      - name: 📊 Summary
+        if: always()
+        run: echo "Scrape completed at $(date -u)"
