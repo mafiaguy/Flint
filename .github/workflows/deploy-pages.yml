@@ -1,3 +1,4 @@
+# .github/workflows/deploy-pages.yml
 name: Build & Deploy Frontend
 
 on:
@@ -27,19 +28,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          # Removed cache — it fails when package-lock.json doesn't exist
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm install
 
       - name: Build
         working-directory: frontend
         run: npm run build
         env:
-          # Vite needs the base path for GitHub Pages subpath deployment
           VITE_BASE: /flint/
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
