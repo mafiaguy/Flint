@@ -586,27 +586,39 @@ ${src.slice(0, 6000)}`,
       setOriginalNodes(nodes);
     }
     setApplying(true);
+
+    // Split LaTeX into preamble + body to reduce token count
+    const docStart = latexSrc.indexOf('\\begin{document}');
+    const preamble = docStart !== -1 ? latexSrc.slice(0, docStart + '\\begin{document}'.length) : '';
+    const body = docStart !== -1 ? latexSrc.slice(docStart + '\\begin{document}'.length).replace(/\\end\{document\}\s*$/, '') : latexSrc;
+
     const res = await db.callAI({
       type: 'chat',
       messages: [{
         role: 'user',
-        content: `You are a LaTeX resume expert. Rewrite this LaTeX resume by applying the suggestions below. Keep the same facts and structure. Rephrase and emphasize what's relevant to the target job. Do NOT invent experience.
+        content: `You are a LaTeX resume expert. Rewrite ONLY the document body below by applying the suggestions. Keep the same facts, structure, and LaTeX commands (\\resumeSubheading, \\resumeItem, \\section, etc.). Rephrase bullet points and emphasize what's relevant to the target job. Do NOT invent experience.
 
-Output ONLY the complete LaTeX (\\documentclass through \\end{document}). No markdown fences.
+Output ONLY the body content (between \\begin{document} and \\end{document}). No preamble, no \\documentclass, no markdown fences.
 
-CURRENT LATEX:
-${latexSrc.slice(0, 7000)}
+DOCUMENT BODY:
+${body.slice(0, 7000)}
 
 SUGGESTIONS:
-${suggestions}
+${suggestions.slice(0, 1500)}
 
 TARGET: ${job?.title} at ${job?.company}`,
       }],
       profile,
     });
     if (res?.text) {
-      const latex = res.text.replace(/^```\w*\n?/, '').replace(/```\s*$/, '').trim();
-      updateLatex(latex);
+      let newBody = res.text.replace(/^```\w*\n?/, '').replace(/```\s*$/, '').trim();
+      // Remove any preamble the AI might have added
+      const bodyIdx = newBody.indexOf('\\begin{document}');
+      if (bodyIdx !== -1) newBody = newBody.slice(bodyIdx + '\\begin{document}'.length);
+      newBody = newBody.replace(/\\end\{document\}\s*$/, '');
+      // Reconstruct full document
+      const fullLatex = `${preamble}\n${newBody.trim()}\n\\end{document}`;
+      updateLatex(fullLatex);
       setView('preview');
     }
     setApplying(false);
