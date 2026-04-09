@@ -4,7 +4,6 @@ import { globalCSS, C } from './theme';
 import useStore from './store';
 import Spinner from './components/ui/Spinner';
 import Header from './components/layout/Header';
-import NavBar from './components/layout/NavBar';
 
 // Eager: Landing and Matches load immediately
 import Landing from './routes/Landing';
@@ -53,7 +52,6 @@ function AppLayout() {
   return (
     <div style={{ minHeight: "100vh", background: "#08080c" }}>
       <Header />
-      <NavBar />
       <main style={{ maxWidth: 1100, margin: "0 auto", width: "100%" }}>
         <Suspense fallback={<PageLoader />}>
           <Routes>

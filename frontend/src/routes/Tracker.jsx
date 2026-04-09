@@ -55,7 +55,7 @@ function AppCard({ app, isDragging, onUpdateNotes, onInterviewPrep }) {
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 14, fontWeight: 700, color: C.t1, margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: C.t1, margin: '0 0 2px', lineHeight: 1.3 }}>
             {app.title}
           </p>
           <p style={{ fontSize: 12, color: C.t2, margin: 0 }}>{app.company}</p>
@@ -196,9 +196,9 @@ function PipelineColumn({ stage, apps, onUpdateNotes, onInterviewPrep }) {
 
   return (
     <div style={{
-      minWidth: 240, maxWidth: 320, flex: '0 0 260px',
-      background: C.bg, borderRadius: 12, border: `1px solid ${C.br}`,
-      display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 200px)',
+      minWidth: 280, flex: '1 1 280px',
+      background: C.bg, borderRadius: 10, border: `1px solid ${C.br}`,
+      display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 140px)',
     }}>
       {/* Column header */}
       <div style={{

@@ -1,54 +1,85 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { C } from '../../theme';
 import useStore from '../../store';
+
+const NAV = [
+  { path: "/matches", label: "Matches" },
+  { path: "/browse",  label: "Browse" },
+  { path: "/tracker", label: "Tracker" },
+  { path: "/profile", label: "Profile" },
+];
 
 export default function Header() {
   const { profile, signOut } = useStore();
   const [showMenu, setShowMenu] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const activePath = location.pathname.startsWith('/job/') ? '/matches' : location.pathname;
 
   return (
-    <div style={{
-      padding: "12px 32px", display: "flex", alignItems: "center", gap: 10,
+    <header style={{
+      display: "flex", alignItems: "center", gap: 24,
+      padding: "0 32px", height: 48,
       borderBottom: `1px solid ${C.br}`, background: C.bg,
+      position: "sticky", top: 0, zIndex: 50,
     }}>
+      {/* Logo */}
       <span
-        style={{ fontSize: 16, fontWeight: 800, color: C.t1, cursor: "pointer", letterSpacing: "-0.5px" }}
+        style={{ fontSize: 15, fontWeight: 800, color: C.t1, cursor: "pointer", flexShrink: 0 }}
         onClick={() => navigate("/matches")}
       >
         flint
       </span>
-      <div style={{ flex: 1 }} />
 
-      <div style={{ position: "relative" }}>
+      {/* Nav */}
+      <nav style={{ display: "flex", gap: 4, flex: 1 }}>
+        {NAV.map((n) => {
+          const active = activePath === n.path;
+          return (
+            <button
+              key={n.path}
+              onClick={() => navigate(n.path)}
+              style={{
+                padding: "6px 12px", border: "none", borderRadius: 6,
+                background: active ? C.c2 : "transparent",
+                color: active ? C.t1 : C.t3,
+                cursor: "pointer", fontSize: 13, fontWeight: active ? 600 : 400,
+                fontFamily: "inherit",
+              }}
+            >
+              {n.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Avatar */}
+      <div style={{ position: "relative", flexShrink: 0 }}>
         <div onClick={() => setShowMenu((p) => !p)} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
           {profile?.avatar_url ? (
-            <img src={profile.avatar_url} style={{ width: 28, height: 28, borderRadius: 99 }} alt="" />
+            <img src={profile.avatar_url} style={{ width: 26, height: 26, borderRadius: 99 }} alt="" />
           ) : (
             <div style={{
-              width: 28, height: 28, borderRadius: 99, background: C.c2, color: C.t2,
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600,
+              width: 26, height: 26, borderRadius: 99, background: C.c2, color: C.t2,
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600,
             }}>
               {(profile?.name || "U")[0]}
             </div>
           )}
-          <svg width="12" height="12" fill="none" stroke={C.t3} strokeWidth="2" viewBox="0 0 24 24">
-            <path d="M6 9l6 6 6-6" />
-          </svg>
         </div>
 
         {showMenu && (
           <>
             <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setShowMenu(false)} />
             <div style={{
-              position: "absolute", right: 0, top: 40, background: C.c1,
+              position: "absolute", right: 0, top: 36, background: C.c1,
               border: `1px solid ${C.br}`, borderRadius: 10, padding: 6,
               minWidth: 200, zIndex: 100, animation: "up .15s ease",
               boxShadow: "0 8px 30px rgba(0,0,0,.4)",
             }}>
               <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.br}`, marginBottom: 4 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: C.t1 }}>{profile?.name}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.t1 }}>{profile?.name}</div>
                 <div style={{ fontSize: 11, color: C.t3, marginTop: 2 }}>{profile?.email}</div>
               </div>
               <button onClick={() => { navigate("/profile"); setShowMenu(false); }}
@@ -68,6 +99,6 @@ export default function Header() {
           </>
         )}
       </div>
-    </div>
+    </header>
   );
 }
