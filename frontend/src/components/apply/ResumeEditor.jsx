@@ -1,216 +1,238 @@
-import { useState } from 'react';
-import { pdf, Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { useState, useEffect, useCallback } from 'react';
+import { pdf, Document, Page, Text, View, StyleSheet, Link } from '@react-pdf/renderer';
 import { C, MONO } from '../../theme';
 import { db } from '../../api';
 import useStore from '../../store';
 
-// PDF styles for tailored resume
-const pdfStyles = StyleSheet.create({
-  page: { padding: 50, fontFamily: 'Helvetica', fontSize: 11, color: '#1a1a1a' },
-  name: { fontSize: 20, fontWeight: 'bold', fontFamily: 'Helvetica-Bold', marginBottom: 4 },
-  contact: { fontSize: 10, color: '#555', marginBottom: 2 },
-  divider: { borderBottomWidth: 1, borderBottomColor: '#ddd', marginVertical: 12 },
-  sectionTitle: { fontSize: 12, fontWeight: 'bold', fontFamily: 'Helvetica-Bold', textTransform: 'uppercase', color: '#333', marginBottom: 6, letterSpacing: 1 },
-  body: { fontSize: 11, lineHeight: 1.6 },
-  paragraph: { marginBottom: 8 },
-  bullet: { fontSize: 11, lineHeight: 1.6, marginBottom: 4, paddingLeft: 12 },
-});
-
-function ResumePDF({ content, profile }) {
-  const lines = content.split('\n');
-  const elements = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    if (/^[A-Z][A-Z\s&/]+:?$/.test(line) || /^#{1,3}\s/.test(line)) {
-      elements.push(
-        <View key={i} style={{ marginTop: elements.length > 0 ? 10 : 0 }}>
-          <Text style={pdfStyles.sectionTitle}>{line.replace(/^#+\s*/, '').replace(/:$/, '')}</Text>
-        </View>
-      );
-    } else if (/^[-•*]\s/.test(line)) {
-      elements.push(
-        <Text key={i} style={pdfStyles.bullet}>{'\u2022 '}{line.replace(/^[-•*]\s*/, '')}</Text>
-      );
-    } else {
-      elements.push(
-        <Text key={i} style={pdfStyles.paragraph}>{line}</Text>
-      );
-    }
-  }
-
-  return (
-    <Document>
-      <Page size="A4" style={pdfStyles.page}>
-        <View>
-          <Text style={pdfStyles.name}>{profile?.name || 'Your Name'}</Text>
-          <Text style={pdfStyles.contact}>{profile?.email || ''}</Text>
-          {profile?.role && <Text style={pdfStyles.contact}>{profile.role} {'\u2022'} {profile?.experience || ''} years experience</Text>}
-          {profile?.skills && <Text style={pdfStyles.contact}>{profile.skills}</Text>}
-        </View>
-        <View style={pdfStyles.divider} />
-        <View style={pdfStyles.body}>{elements}</View>
-      </Page>
-    </Document>
-  );
+// ── LaTeX → structured data parser ──
+function parseLatex(src) {
+  let t = src;
+  // Strip comments
+  t = t.replace(/%.*$/gm, '');
+  // Strip preamble
+  t = t.replace(/[\s\S]*?\\begin\{document\}/, '');
+  t = t.replace(/\\end\{document\}[\s\S]*/, '');
+  // Normalize line breaks
+  t = t.replace(/\\\\(\[.*?\])?/g, '\n');
+  t = t.replace(/\\newline/g, '\n');
+  // Convert \hfill to tab separator
+  t = t.replace(/\\hfill/g, ' | ');
+  // Strip font size commands
+  t = t.replace(/\\(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)\b/g, '');
+  // Inline formatting
+  t = t.replace(/\\textbf\{([^}]*)\}/g, '<b>$1</b>');
+  t = t.replace(/\\textit\{([^}]*)\}/g, '<i>$1</i>');
+  t = t.replace(/\\emph\{([^}]*)\}/g, '<i>$1</i>');
+  t = t.replace(/\\underline\{([^}]*)\}/g, '<u>$1</u>');
+  t = t.replace(/\\href\{([^}]*)\}\{([^}]*)\}/g, '<a href="$1">$2</a>');
+  // Sections
+  t = t.replace(/\\section\*?\{([^}]*)\}/g, '\n<section>$1</section>\n');
+  t = t.replace(/\\subsection\*?\{([^}]*)\}/g, '\n<subsection>$1</subsection>\n');
+  // Items
+  t = t.replace(/\\item\s*/g, '<item>');
+  // Strip environments
+  t = t.replace(/\\begin\{[^}]*\}(\[[^\]]*\])?/g, '');
+  t = t.replace(/\\end\{[^}]*\}/g, '');
+  // Strip layout commands
+  t = t.replace(/\\(vspace|hspace|vfill|pagebreak|clearpage|newpage|noindent|centering|raggedright|raggedleft|par|medskip|bigskip|smallskip)\*?(\{[^}]*\})?/g, '');
+  // Strip remaining \command{text} → text
+  t = t.replace(/\\[a-zA-Z]+\{([^}]*)\}/g, '$1');
+  // Strip remaining commands
+  t = t.replace(/\\[a-zA-Z]+\*?/g, '');
+  // Clean braces, special chars
+  t = t.replace(/[{}]/g, '');
+  t = t.replace(/~/g, '\u00a0');
+  t = t.replace(/\\&/g, '&');
+  t = t.replace(/---/g, '\u2014');
+  t = t.replace(/--/g, '\u2013');
+  // Clean whitespace
+  t = t.replace(/[ \t]+/g, ' ');
+  t = t.replace(/\n{3,}/g, '\n\n');
+  return t.trim();
 }
 
-function ResumePreview({ content, profile }) {
-  const lines = content.split('\n');
-
-  const renderLines = () => {
-    const elements = [];
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) { elements.push(<div key={i} style={{ height: 8 }} />); continue; }
-
-      if (/^[A-Z][A-Z\s&/]+:?$/.test(line) || /^#{1,3}\s/.test(line)) {
-        elements.push(
-          <div key={i} style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', color: '#ddd', letterSpacing: 1, marginTop: 12, marginBottom: 4 }}>
-            {line.replace(/^#+\s*/, '').replace(/:$/, '')}
-          </div>
-        );
-      } else if (/^[-•*]\s/.test(line)) {
-        elements.push(
-          <div key={i} style={{ fontSize: 11, lineHeight: 1.6, paddingLeft: 14, color: '#bbb' }}>
-            {'\u2022 '}{line.replace(/^[-•*]\s*/, '')}
-          </div>
-        );
-      } else {
-        elements.push(
-          <div key={i} style={{ fontSize: 11, lineHeight: 1.6, marginBottom: 4, color: '#bbb' }}>{line}</div>
-        );
-      }
-    }
-    return elements;
-  };
-
-  return (
-    <div style={{
-      background: '#111', border: `1px solid ${C.br}`, borderRadius: 10,
-      padding: 32, maxHeight: 500, overflow: 'auto', fontFamily: 'Helvetica, Arial, sans-serif',
-    }}>
-      <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 4 }}>{profile?.name || 'Your Name'}</div>
-      <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>{profile?.email || ''}</div>
-      {profile?.role && <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>{profile.role} &bull; {profile?.experience || ''} years experience</div>}
-      {profile?.skills && <div style={{ fontSize: 10, color: '#888' }}>{profile.skills}</div>}
-      <div style={{ borderBottom: '1px solid #333', margin: '12px 0' }} />
-      {renderLines()}
-    </div>
-  );
-}
-
-// Detect garbage resume_text (raw PDF binary, etc.)
+// ── Detect garbage text ──
 function isGarbageText(text) {
   if (!text || text.length < 20) return true;
   return /^%PDF|obj\s*<<|\/Filter\s*\/FlateDecode|endobj|xref|startxref/.test(text);
 }
 
-// Convert LaTeX source to clean structured plain text
-function latexToText(latex) {
-  let text = latex;
-  // Remove comments
-  text = text.replace(/%.*$/gm, '');
-  // Remove preamble (everything before \begin{document})
-  text = text.replace(/[\s\S]*?\\begin\{document\}/, '');
-  // Remove \end{document}
-  text = text.replace(/\\end\{document\}[\s\S]*/, '');
-  // Convert section commands to ALL CAPS headers
-  text = text.replace(/\\section\*?\{([^}]+)\}/g, (_, t) => `\n${t.toUpperCase()}\n`);
-  text = text.replace(/\\subsection\*?\{([^}]+)\}/g, (_, t) => `\n${t}\n`);
-  // Convert \textbf, \textit, \emph
-  text = text.replace(/\\textbf\{([^}]+)\}/g, '$1');
-  text = text.replace(/\\textit\{([^}]+)\}/g, '$1');
-  text = text.replace(/\\emph\{([^}]+)\}/g, '$1');
-  text = text.replace(/\\underline\{([^}]+)\}/g, '$1');
-  // Convert \href{url}{text} to text
-  text = text.replace(/\\href\{[^}]+\}\{([^}]+)\}/g, '$1');
-  // Convert itemize/enumerate items
-  text = text.replace(/\\item\s*/g, '- ');
-  // Remove begin/end environments
-  text = text.replace(/\\begin\{[^}]+\}(\[[^\]]*\])?/g, '');
-  text = text.replace(/\\end\{[^}]+\}/g, '');
-  // Remove common commands
-  text = text.replace(/\\(vspace|hspace|hfill|vfill|newpage|clearpage|pagebreak|noindent|centering|raggedright|raggedleft|small|footnotesize|large|Large|huge|Huge|normalsize|par)\*?(\{[^}]*\})?/g, '');
-  // Remove \command{content} → content for remaining
-  text = text.replace(/\\[a-zA-Z]+\{([^}]*)\}/g, '$1');
-  // Remove remaining backslash commands
-  text = text.replace(/\\[a-zA-Z]+\*?/g, '');
-  // Clean up braces
-  text = text.replace(/[{}]/g, '');
-  // Clean up special chars
-  text = text.replace(/~/g, ' ');
-  text = text.replace(/\\\\/g, '\n');
-  text = text.replace(/\\&/g, '&');
-  text = text.replace(/\\%/g, '%');
-  text = text.replace(/\\#/g, '#');
-  text = text.replace(/\\\$/g, '$');
-  // Clean up whitespace
-  text = text.replace(/[ \t]+/g, ' ');
-  text = text.replace(/\n{3,}/g, '\n\n');
-  return text.trim();
+// ── Detect if text is LaTeX source ──
+function isLatex(text) {
+  if (!text) return false;
+  return /\\(section|begin|documentclass|textbf|item|href)\b/.test(text);
 }
 
+// ── Render parsed LaTeX as HTML preview ──
+function LatexPreview({ html, profile, email }) {
+  return (
+    <div style={{
+      background: '#fff', color: '#1a1a1a', borderRadius: 4, padding: '40px 50px',
+      maxHeight: 550, overflow: 'auto', fontFamily: '"Computer Modern Serif", "Latin Modern Roman", Georgia, "Times New Roman", serif',
+      fontSize: 11, lineHeight: 1.55, border: `1px solid ${C.br}`,
+    }}>
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: 12 }}>
+        <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: 0.5 }}>{profile?.name || 'Your Name'}</div>
+        <div style={{ fontSize: 10, color: '#555', marginTop: 4 }}>
+          {[email || profile?.email, profile?.role].filter(Boolean).join(' | ')}
+        </div>
+      </div>
+      <div style={{ borderBottom: '1.5px solid #1a1a1a', marginBottom: 10 }} />
+      {/* Body */}
+      <div dangerouslySetInnerHTML={{ __html: formatParsedHtml(html) }} />
+    </div>
+  );
+}
+
+function formatParsedHtml(parsed) {
+  let html = parsed;
+  // Section headers
+  html = html.replace(/<section>(.*?)<\/section>/g,
+    '<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid #999;padding-bottom:2px;margin:14px 0 6px;color:#1a1a1a">$1</div>');
+  html = html.replace(/<subsection>(.*?)<\/subsection>/g,
+    '<div style="font-size:11px;font-weight:700;margin:8px 0 3px;color:#333">$1</div>');
+  // Items
+  html = html.replace(/<item>/g,
+    '<div style="padding-left:16px;text-indent:-12px;margin-bottom:2px">\u2022 ');
+  // Bold/italic
+  html = html.replace(/<b>(.*?)<\/b>/g, '<strong>$1</strong>');
+  html = html.replace(/<i>(.*?)<\/i>/g, '<em>$1</em>');
+  html = html.replace(/<u>(.*?)<\/u>/g, '<span style="text-decoration:underline">$1</span>');
+  // Links
+  html = html.replace(/<a href="([^"]*)">(.*?)<\/a>/g,
+    '<a href="$1" style="color:#2563eb;text-decoration:underline" target="_blank">$2</a>');
+  // Paragraphs from double newlines
+  html = html.replace(/\n\n+/g, '</div><div style="margin-bottom:6px">');
+  html = html.replace(/\n/g, '<br/>');
+  html = '<div style="margin-bottom:6px">' + html + '</div>';
+  return html;
+}
+
+// ── PDF from parsed LaTeX ──
+const ps = StyleSheet.create({
+  page: { padding: '40 50', fontFamily: 'Helvetica', fontSize: 10.5, color: '#1a1a1a', lineHeight: 1.5 },
+  headerName: { fontSize: 20, fontWeight: 'bold', fontFamily: 'Helvetica-Bold', textAlign: 'center' },
+  headerContact: { fontSize: 9.5, color: '#555', textAlign: 'center', marginTop: 3 },
+  rule: { borderBottomWidth: 1.5, borderBottomColor: '#1a1a1a', marginTop: 8, marginBottom: 8 },
+  section: { fontSize: 11.5, fontWeight: 'bold', fontFamily: 'Helvetica-Bold', textTransform: 'uppercase', letterSpacing: 1.2, borderBottomWidth: 0.75, borderBottomColor: '#999', paddingBottom: 1.5, marginTop: 10, marginBottom: 5 },
+  subsection: { fontSize: 10.5, fontWeight: 'bold', fontFamily: 'Helvetica-Bold', marginTop: 6, marginBottom: 2 },
+  body: { fontSize: 10.5, lineHeight: 1.5 },
+  item: { fontSize: 10.5, lineHeight: 1.5, paddingLeft: 14, marginBottom: 1.5 },
+  para: { marginBottom: 4 },
+});
+
+function LatexResumePDF({ parsed, profile, email }) {
+  // Convert parsed HTML-like markup to react-pdf elements
+  const elements = [];
+  const lines = parsed.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const sectionMatch = line.match(/<section>(.*?)<\/section>/);
+    const subMatch = line.match(/<subsection>(.*?)<\/subsection>/);
+    if (sectionMatch) {
+      elements.push(<Text key={i} style={ps.section}>{strip(sectionMatch[1])}</Text>);
+    } else if (subMatch) {
+      elements.push(<Text key={i} style={ps.subsection}>{strip(subMatch[1])}</Text>);
+    } else if (line.startsWith('<item>')) {
+      elements.push(<Text key={i} style={ps.item}>{'\u2022  '}{strip(line.replace('<item>', ''))}</Text>);
+    } else {
+      elements.push(<Text key={i} style={ps.para}>{strip(line)}</Text>);
+    }
+  }
+
+  return (
+    <Document>
+      <Page size="A4" style={ps.page}>
+        <Text style={ps.headerName}>{profile?.name || 'Your Name'}</Text>
+        <Text style={ps.headerContact}>
+          {[email || profile?.email, profile?.role].filter(Boolean).join(' | ')}
+        </Text>
+        <View style={ps.rule} />
+        <View style={ps.body}>{elements}</View>
+      </Page>
+    </Document>
+  );
+}
+
+function strip(s) {
+  return s.replace(/<\/?[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
+// ── Main component ──
 export default function ResumeEditor({ job }) {
   const { profile, setProfile } = useStore();
+  const [latexSrc, setLatexSrc] = useState('');
+  const [parsed, setParsed] = useState('');
   const [suggestions, setSuggestions] = useState('');
-  const initialText = isGarbageText(profile?.resume_text) ? '' : (profile?.resume_text || '');
-  const [editedResume, setEditedResume] = useState(initialText);
   const [analyzing, setAnalyzing] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [pdfEmail, setPdfEmail] = useState(profile?.email || '');
-  const [view, setView] = useState('edit'); // edit | suggestions | preview
+  const [view, setView] = useState('editor'); // editor | preview | suggestions
   const [saved, setSaved] = useState(false);
-  const [showLatexPaste, setShowLatexPaste] = useState(false);
-  const [latexInput, setLatexInput] = useState('');
-  const [converting, setConverting] = useState(false);
 
-  const handleLatexConvert = () => {
-    if (!latexInput.trim()) return;
-    const converted = latexToText(latexInput);
-    setEditedResume(converted);
-    setShowLatexPaste(false);
-    setLatexInput('');
-  };
+  // On mount: if profile has LaTeX, use it; otherwise show generation prompt
+  useEffect(() => {
+    const rt = profile?.resume_text || '';
+    if (isLatex(rt)) {
+      setLatexSrc(rt);
+      setParsed(parseLatex(rt));
+    } else if (!isGarbageText(rt) && rt.length > 50) {
+      // Plain text resume exists — user can generate LaTeX from it
+      setLatexSrc('');
+    }
+  }, []);
 
-  // Use AI for better LaTeX conversion when the basic parser isn't enough
-  const handleLatexAIConvert = async () => {
-    if (!latexInput.trim()) return;
-    setConverting(true);
+  // Re-parse when LaTeX source changes
+  const updateLatex = useCallback((src) => {
+    setLatexSrc(src);
+    if (isLatex(src)) setParsed(parseLatex(src));
+  }, []);
+
+  // Generate LaTeX from existing profile/resume using AI
+  const generateLatex = async () => {
+    setGenerating(true);
+    const resumeText = profile?.resume_text || '';
+    const src = isGarbageText(resumeText)
+      ? `Name: ${profile?.name}\nRole: ${profile?.role}\nExperience: ${profile?.experience} years\nSkills: ${profile?.skills}`
+      : resumeText;
+
     const res = await db.callAI({
       type: 'chat',
       messages: [{
         role: 'user',
-        content: `Convert this LaTeX resume source code to clean plain text. Keep the exact same content, facts, dates, and structure. Use ALL CAPS for section headers, "- " for bullet points, blank lines between sections. Output ONLY the resume text — no explanations, no markdown fences.
+        content: `Convert this resume into professional LaTeX code. Use a clean, modern single-column format suitable for tech/engineering roles. Use \\section for main sections, \\textbf for emphasis, \\begin{itemize}/\\item for bullet points, \\href for links.
 
-LATEX SOURCE:
-${latexInput.slice(0, 8000)}`,
+Output ONLY the complete LaTeX document (from \\documentclass to \\end{document}). No explanations, no markdown fences.
+
+RESUME CONTENT:
+${src.slice(0, 6000)}`,
       }],
       profile,
     });
     if (res?.text) {
-      setEditedResume(res.text);
-      setShowLatexPaste(false);
-      setLatexInput('');
+      const latex = res.text.replace(/^```\w*\n?/, '').replace(/```\s*$/, '').trim();
+      updateLatex(latex);
+      setView('preview');
     }
-    setConverting(false);
+    setGenerating(false);
   };
 
-  // Save edited resume back to profile so AI uses the correct text
-  const saveResume = async () => {
-    await db.saveProfile({ resume_text: editedResume });
-    setProfile({ ...profile, resume_text: editedResume });
+  // Save LaTeX to profile
+  const saveToProfile = async () => {
+    await db.saveProfile({ resume_text: latexSrc });
+    setProfile({ ...profile, resume_text: latexSrc });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
-  // AI suggestions compare the user's resume (editedResume) against the JD
+  // Get JD-specific suggestions (output as LaTeX-aware advice)
   const analyze = async () => {
-    if (!editedResume.trim()) {
-      setSuggestions('Paste your resume text in the Edit Resume tab first.');
+    if (!latexSrc.trim() && !parsed.trim()) {
+      setSuggestions('Add your LaTeX resume first — paste it or generate from your profile.');
       return;
     }
     setAnalyzing(true);
@@ -223,25 +245,26 @@ ${latexInput.slice(0, 8000)}`,
       },
       profile: {
         ...profile,
-        resume_text: editedResume,
+        resume_text: parsed || latexSrc,
       },
     });
-    setSuggestions(res?.text || 'Could not generate suggestions. Please try again.');
+    setSuggestions(res?.text || 'Could not generate suggestions.');
     setAnalyzing(false);
   };
 
+  // Apply suggestions — AI rewrites the LaTeX with suggestions incorporated
   const applySuggestions = async () => {
     setApplying(true);
     const res = await db.callAI({
       type: 'chat',
       messages: [{
         role: 'user',
-        content: `You are a professional resume writer. Rewrite the resume below by applying the tailoring suggestions. Keep the same structure and facts — do NOT invent experience. Just rephrase, reorder, and emphasize what's relevant to the target job.
+        content: `You are a LaTeX resume expert. Rewrite the LaTeX resume below by applying the tailoring suggestions. Keep the same facts, dates, and structure — do NOT invent experience. Rephrase and emphasize what's relevant to the target job.
 
-Output ONLY the final resume body text. No header (name/email — that's added separately). No markdown fences, no explanations. Use ALL CAPS for section headers, "- " for bullets, blank lines between sections.
+Output ONLY the complete LaTeX document (from \\documentclass to \\end{document}). No markdown fences, no explanations.
 
-CURRENT RESUME:
-${editedResume}
+CURRENT LATEX RESUME:
+${latexSrc.slice(0, 7000)}
 
 SUGGESTIONS TO APPLY:
 ${suggestions}
@@ -251,23 +274,25 @@ TARGET: ${job?.title} at ${job?.company}`,
       profile,
     });
     if (res?.text) {
-      setEditedResume(res.text);
-      setView('edit');
+      const latex = res.text.replace(/^```\w*\n?/, '').replace(/```\s*$/, '').trim();
+      updateLatex(latex);
+      setView('preview');
     }
     setApplying(false);
   };
 
+  // Download rendered PDF
   const downloadPDF = async () => {
     setDownloading(true);
     try {
-      const pdfProfile = { ...profile, email: pdfEmail || profile?.email };
+      const finalParsed = isLatex(latexSrc) ? parseLatex(latexSrc) : parsed;
       const blob = await pdf(
-        <ResumePDF content={editedResume} profile={pdfProfile} />
+        <LatexResumePDF parsed={finalParsed} profile={profile} email={pdfEmail} />
       ).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Resume_Tailored_${(job.company || 'company').replace(/\s+/g, '_')}_${(job.title || 'role').replace(/\s+/g, '_')}.pdf`;
+      a.download = `Resume_${(job.company || 'company').replace(/\s+/g, '_')}_${(job.title || 'role').replace(/\s+/g, '_')}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -276,197 +301,157 @@ TARGET: ${job?.title} at ${job?.company}`,
     setDownloading(false);
   };
 
+  const hasLatex = latexSrc.trim().length > 0;
+
   return (
     <div>
-      {/* Controls */}
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <span style={{ fontSize: 10, fontFamily: MONO, letterSpacing: 2, color: C.pur }}>RESUME TAILOR</span>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={analyze}
-            disabled={analyzing || !editedResume.trim()}
-            style={{
-              padding: '6px 16px', background: 'transparent', border: `1px solid ${C.pur}55`,
-              borderRadius: 8, color: !editedResume.trim() ? C.t3 : C.pur, cursor: analyzing ? 'wait' : 'pointer',
+          {!hasLatex && (
+            <button onClick={generateLatex} disabled={generating} style={{
+              padding: '6px 16px', background: C.pur + '22', border: `1px solid ${C.pur}44`,
+              borderRadius: 8, color: C.pur, cursor: generating ? 'wait' : 'pointer',
               fontSize: 12, fontWeight: 600, fontFamily: MONO,
-            }}
-          >
-            {analyzing ? 'Analyzing...' : suggestions ? 'Re-analyze' : 'Get Suggestions'}
-          </button>
+            }}>
+              {generating ? 'Generating...' : 'Generate LaTeX from Profile'}
+            </button>
+          )}
+          {hasLatex && (
+            <button onClick={analyze} disabled={analyzing} style={{
+              padding: '6px 16px', background: 'transparent', border: `1px solid ${C.pur}55`,
+              borderRadius: 8, color: C.pur, cursor: analyzing ? 'wait' : 'pointer',
+              fontSize: 12, fontWeight: 600, fontFamily: MONO,
+            }}>
+              {analyzing ? 'Analyzing...' : suggestions ? 'Re-analyze' : 'Get Suggestions'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Email for PDF */}
+      {/* Email */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <label style={{ fontSize: 11, color: C.t3, fontFamily: MONO, whiteSpace: 'nowrap' }}>EMAIL IN PDF</label>
-        <input
-          type="email"
-          value={pdfEmail}
-          onChange={(e) => setPdfEmail(e.target.value)}
+        <input type="email" value={pdfEmail} onChange={(e) => setPdfEmail(e.target.value)}
           placeholder={profile?.email || 'your@email.com'}
-          style={{
-            flex: 1, padding: '5px 10px', fontSize: 13,
-            background: 'transparent', border: `1px solid ${C.br}`,
-            borderRadius: 6, color: C.t1,
-          }}
+          style={{ flex: 1, padding: '5px 10px', fontSize: 13, background: 'transparent', border: `1px solid ${C.br}`, borderRadius: 6, color: C.t1 }}
         />
       </div>
 
-      {/* View toggle */}
+      {/* Tabs */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 12, borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.br}` }}>
         {[
-          { id: 'edit', label: 'Edit Resume' },
+          { id: 'editor', label: 'LaTeX Editor' },
+          { id: 'preview', label: 'Rendered Preview' },
           { id: 'suggestions', label: 'AI Suggestions' },
-          { id: 'preview', label: 'Preview' },
         ].map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setView(t.id)}
-            style={{
-              flex: 1, padding: '8px', border: 'none', fontSize: 11, fontWeight: 700,
-              fontFamily: MONO, cursor: 'pointer',
-              background: view === t.id ? C.pur + '22' : C.c2,
-              color: view === t.id ? C.pur : C.t3,
-            }}
-          >
+          <button key={t.id} onClick={() => setView(t.id)} style={{
+            flex: 1, padding: '8px', border: 'none', fontSize: 11, fontWeight: 700,
+            fontFamily: MONO, cursor: 'pointer',
+            background: view === t.id ? C.pur + '22' : C.c2,
+            color: view === t.id ? C.pur : C.t3,
+          }}>
             {t.label}
           </button>
         ))}
       </div>
 
-      {/* Edit view — this is now the default/first tab */}
-      {view === 'edit' && (
+      {/* ── LaTeX Editor ── */}
+      {view === 'editor' && (
         <>
-          {!editedResume.trim() && !showLatexPaste && (
+          {!hasLatex && !generating && (
             <div style={{
               padding: 16, marginBottom: 10, background: C.acc + '15', border: `1px solid ${C.acc}33`,
-              borderRadius: 8, fontSize: 12, color: C.acc, lineHeight: 1.6,
+              borderRadius: 8, fontSize: 12, color: C.acc, lineHeight: 1.6, textAlign: 'center',
             }}>
-              <p style={{ marginBottom: 8 }}>Your uploaded resume couldn't be parsed as text (LaTeX PDFs aren't supported by the basic parser).</p>
-              <p style={{ marginBottom: 10 }}>Choose how to import your resume:</p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setShowLatexPaste(true)} style={{
-                  padding: '8px 16px', background: C.pur + '22', border: `1px solid ${C.pur}44`,
-                  borderRadius: 8, color: C.pur, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
-                }}>
-                  Paste LaTeX Code
-                </button>
-                <button onClick={() => setShowLatexPaste(false)} style={{
-                  padding: '8px 16px', background: 'transparent', border: `1px solid ${C.br}`,
-                  borderRadius: 8, color: C.t2, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
-                }}>
-                  Paste Plain Text
-                </button>
-              </div>
+              <p style={{ marginBottom: 8 }}>Paste your LaTeX resume code below, or click <strong>"Generate LaTeX from Profile"</strong> to create one from your existing resume.</p>
             </div>
           )}
-
-          {/* LaTeX paste modal */}
-          {showLatexPaste && (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <span style={{ fontSize: 11, color: C.pur, fontFamily: MONO, fontWeight: 700 }}>PASTE YOUR LATEX SOURCE</span>
-                <button onClick={() => setShowLatexPaste(false)} style={{ color: C.t3, cursor: 'pointer', background: 'none', border: 'none', fontSize: 14 }}>&times;</button>
-              </div>
-              <textarea
-                value={latexInput}
-                onChange={(e) => setLatexInput(e.target.value)}
-                placeholder={'\\documentclass{article}\n\\begin{document}\n\\section{Experience}\n...\n\\end{document}'}
-                rows={12}
-                style={{ resize: 'vertical', lineHeight: 1.4, fontSize: 12, minHeight: 200, fontFamily: MONO }}
-              />
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button
-                  onClick={handleLatexConvert}
-                  disabled={!latexInput.trim()}
-                  style={{
-                    padding: '8px 16px', background: 'transparent', border: `1px solid ${C.br}`,
-                    borderRadius: 8, color: C.t2, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
-                  }}
-                >
-                  Quick Convert
-                </button>
-                <button
-                  onClick={handleLatexAIConvert}
-                  disabled={!latexInput.trim() || converting}
-                  style={{
-                    padding: '8px 16px', background: C.pur + '22', border: `1px solid ${C.pur}44`,
-                    borderRadius: 8, color: C.pur, cursor: converting ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
-                  }}
-                >
-                  {converting ? 'Converting...' : 'AI Convert (better)'}
-                </button>
-              </div>
-              <p style={{ fontSize: 10, color: C.t3, marginTop: 6 }}>Quick Convert strips LaTeX commands locally. AI Convert uses LLM for cleaner output.</p>
+          {generating && (
+            <div style={{ textAlign: 'center', padding: 30 }}>
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" style={{ margin: '0 auto' }} />
+              <p style={{ color: C.t3, fontSize: 12, marginTop: 10 }}>Generating LaTeX resume from your profile...</p>
             </div>
           )}
-
-          {!showLatexPaste && (
+          {!generating && (
             <>
               <textarea
-                value={editedResume}
-                onChange={(e) => setEditedResume(e.target.value)}
-                placeholder={`SUMMARY\nExperienced SRE with 5+ years...\n\nEXPERIENCE\nSenior SRE, Company Name (2022-Present)\n- Led migration to Kubernetes...\n- Reduced incident response time by 40%...\n\nEDUCATION\nB.Tech Computer Science, University (2018)`}
-                rows={16}
-                style={{ resize: 'vertical', lineHeight: 1.6, fontSize: 13, minHeight: 250 }}
+                value={latexSrc}
+                onChange={(e) => updateLatex(e.target.value)}
+                placeholder={'\\documentclass[11pt]{article}\n\\usepackage[margin=0.7in]{geometry}\n\\begin{document}\n\n\\begin{center}\n  {\\LARGE\\textbf{Your Name}}\\\\\n  your@email.com | Your Role\n\\end{center}\n\n\\section*{Experience}\n\\textbf{Senior SRE, Company} \\hfill 2022--Present\n\\begin{itemize}\n  \\item Led migration to Kubernetes...\n\\end{itemize}\n\n\\end{document}'}
+                rows={18}
+                style={{ resize: 'vertical', lineHeight: 1.4, fontSize: 12, minHeight: 280, fontFamily: MONO }}
               />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <p style={{ fontSize: 11, color: C.t3, fontFamily: MONO, margin: 0 }}>
-                {editedResume.split(/\s+/).filter(Boolean).length} words
-              </p>
-              <button onClick={() => setShowLatexPaste(true)} style={{ fontSize: 10, color: C.t3, background: 'none', border: 'none', cursor: 'pointer', fontFamily: MONO, textDecoration: 'underline' }}>
-                Import LaTeX
-              </button>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={saveResume}
-                disabled={!editedResume.trim()}
-                style={{
-                  padding: '8px 18px', background: 'transparent', border: `1px solid ${saved ? C.grn + '44' : C.br}`,
-                  borderRadius: 8, color: saved ? C.grn : C.t2, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
-                }}
-              >
-                {saved ? 'Saved!' : 'Save to Profile'}
-              </button>
-              <button
-                onClick={() => setView('preview')}
-                disabled={!editedResume.trim()}
-                style={{
-                  padding: '8px 18px', background: 'transparent', border: `1px solid ${C.br}`,
-                  borderRadius: 8, color: C.t2, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
-                }}
-              >
-                Preview
-              </button>
-              <button
-                onClick={downloadPDF}
-                disabled={downloading || !editedResume.trim()}
-                style={{
-                  padding: '8px 18px', background: C.grn + '22', border: `1px solid ${C.grn}44`,
-                  borderRadius: 8, color: C.grn, cursor: downloading ? 'wait' : 'pointer',
-                  fontSize: 12, fontWeight: 600, fontFamily: MONO,
-                }}
-              >
-                {downloading ? 'Creating PDF...' : 'Download PDF'}
-              </button>
-            </div>
-          </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                <p style={{ fontSize: 11, color: C.t3, fontFamily: MONO, margin: 0 }}>
+                  {latexSrc.length} chars
+                </p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={saveToProfile} disabled={!hasLatex} style={{
+                    padding: '8px 18px', background: 'transparent', border: `1px solid ${saved ? C.grn + '44' : C.br}`,
+                    borderRadius: 8, color: saved ? C.grn : C.t2, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
+                  }}>
+                    {saved ? 'Saved!' : 'Save to Profile'}
+                  </button>
+                  <button onClick={() => { if (hasLatex) { setParsed(parseLatex(latexSrc)); setView('preview'); } }}
+                    disabled={!hasLatex} style={{
+                    padding: '8px 18px', background: C.grn + '22', border: `1px solid ${C.grn}44`,
+                    borderRadius: 8, color: hasLatex ? C.grn : C.t3, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
+                  }}>
+                    Render Preview
+                  </button>
+                </div>
+              </div>
             </>
           )}
         </>
       )}
 
-      {/* Suggestions view */}
+      {/* ── Rendered Preview ── */}
+      {view === 'preview' && (
+        <>
+          {parsed.trim() ? (
+            <>
+              <LatexPreview html={parsed} profile={profile} email={pdfEmail} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                <button onClick={() => setView('editor')} style={{
+                  padding: '8px 18px', background: 'transparent', border: `1px solid ${C.br}`,
+                  borderRadius: 8, color: C.t2, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
+                }}>
+                  Back to Editor
+                </button>
+                <button onClick={downloadPDF} disabled={downloading} style={{
+                  padding: '8px 18px', background: C.grn + '22', border: `1px solid ${C.grn}44`,
+                  borderRadius: 8, color: C.grn, cursor: downloading ? 'wait' : 'pointer',
+                  fontSize: 12, fontWeight: 600, fontFamily: MONO,
+                }}>
+                  {downloading ? 'Creating PDF...' : 'Download as PDF'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '30px 20px' }}>
+              <p style={{ color: C.t3, fontSize: 13 }}>No LaTeX to render. Add your LaTeX code in the editor or generate from your profile.</p>
+              <button onClick={generateLatex} disabled={generating} style={{
+                marginTop: 12, padding: '8px 18px', background: C.pur + '22', border: `1px solid ${C.pur}44`,
+                borderRadius: 8, color: C.pur, cursor: generating ? 'wait' : 'pointer',
+                fontSize: 12, fontWeight: 600, fontFamily: MONO,
+              }}>
+                {generating ? 'Generating...' : 'Generate LaTeX from Profile'}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── AI Suggestions ── */}
       {view === 'suggestions' && (
         <>
           {analyzing ? (
             <div style={{ textAlign: 'center', padding: 30 }}>
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
-              <p style={{ color: C.t3, fontSize: 12, marginTop: 10 }}>
-                Comparing your resume to this job description...
-              </p>
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" style={{ margin: '0 auto' }} />
+              <p style={{ color: C.t3, fontSize: 12, marginTop: 10 }}>Comparing your resume to this job description...</p>
             </div>
           ) : suggestions ? (
             <>
@@ -477,62 +462,24 @@ TARGET: ${job?.title} at ${job?.company}`,
               }}>
                 {suggestions}
               </div>
-              <button
-                onClick={applySuggestions}
-                disabled={applying}
-                style={{
-                  marginTop: 10, width: '100%', padding: '10px', background: C.pur + '22',
-                  border: `1px solid ${C.pur}44`, borderRadius: 8, color: C.pur,
-                  cursor: applying ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
-                }}
-              >
-                {applying ? 'Rewriting resume...' : 'Apply Suggestions to Resume'}
+              <button onClick={applySuggestions} disabled={applying} style={{
+                marginTop: 10, width: '100%', padding: '10px', background: C.pur + '22',
+                border: `1px solid ${C.pur}44`, borderRadius: 8, color: C.pur,
+                cursor: applying ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
+              }}>
+                {applying ? 'Rewriting LaTeX...' : 'Apply Suggestions to LaTeX'}
               </button>
+              <p style={{ fontSize: 10, color: C.t3, marginTop: 6, textAlign: 'center' }}>
+                AI will rewrite your LaTeX resume with these suggestions applied, then show the rendered preview.
+              </p>
             </>
           ) : (
             <div style={{ textAlign: 'center', padding: '30px 20px' }}>
               <p style={{ color: C.t3, fontSize: 13, lineHeight: 1.6 }}>
-                {editedResume.trim()
-                  ? `Click "Get Suggestions" to compare your resume against this ${job?.title || 'role'} at ${job?.company || 'company'}.`
-                  : 'Paste your resume in the Edit Resume tab first, then come back for AI suggestions.'}
+                {hasLatex
+                  ? `Click "Get Suggestions" to compare your resume against ${job?.title || 'this role'} at ${job?.company || 'this company'}.`
+                  : 'Add your LaTeX resume first, then come back for AI suggestions.'}
               </p>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Preview view */}
-      {view === 'preview' && (
-        <>
-          {editedResume.trim() ? (
-            <>
-              <ResumePreview content={editedResume} profile={{ ...profile, email: pdfEmail || profile?.email }} />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
-                <button
-                  onClick={() => setView('edit')}
-                  style={{
-                    padding: '8px 18px', background: 'transparent', border: `1px solid ${C.br}`,
-                    borderRadius: 8, color: C.t2, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
-                  }}
-                >
-                  Back to Edit
-                </button>
-                <button
-                  onClick={downloadPDF}
-                  disabled={downloading}
-                  style={{
-                    padding: '8px 18px', background: C.grn + '22', border: `1px solid ${C.grn}44`,
-                    borderRadius: 8, color: C.grn, cursor: downloading ? 'wait' : 'pointer',
-                    fontSize: 12, fontWeight: 600, fontFamily: MONO,
-                  }}
-                >
-                  {downloading ? 'Creating PDF...' : 'Download PDF'}
-                </button>
-              </div>
-            </>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '30px 20px' }}>
-              <p style={{ color: C.t3, fontSize: 13 }}>No resume content to preview. Switch to Edit to paste your resume.</p>
             </div>
           )}
         </>
