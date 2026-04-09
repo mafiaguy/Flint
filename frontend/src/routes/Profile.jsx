@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { db } from '@/api';
 import useStore from '@/store';
 import { FLAGS, CATS } from '@/theme';
+import LoadingMessage from '@/components/ui/loading-message';
 
 export default function Profile() {
   const { profile, setProfile, matches, qa, addQA, deleteQA } = useStore();
@@ -182,7 +183,7 @@ export default function Profile() {
             </Button>
           </div>
           {skillLoading ? (
-            <div className="flex justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-foreground" /></div>
+            <div className="p-12"><LoadingMessage category="skills" /></div>
           ) : skillGap ? (
             <Card className="p-5 text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{skillGap}</Card>
           ) : (
@@ -200,7 +201,7 @@ export default function Profile() {
             </Button>
           </div>
           {salaryLoading ? (
-            <div className="flex justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-foreground" /></div>
+            <div className="p-12"><LoadingMessage category="salary" /></div>
           ) : salary && salary.sample_size >= 3 ? (
             <div className="grid grid-cols-3 gap-3">
               {[{ label: 'Low (25th)', value: salary.percentile_25 }, { label: 'Median', value: salary.median }, { label: 'High (75th)', value: salary.percentile_75 }].map((s) => (

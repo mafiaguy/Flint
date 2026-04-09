@@ -3,6 +3,7 @@ import { pdf, Document, Page, Text, View, StyleSheet, Link } from '@react-pdf/re
 import { C, MONO } from '../../theme';
 import { db } from '../../api';
 import useStore from '../../store';
+import { useLoadingMessage } from '../ui/loading-message';
 
 // ── Detect garbage / LaTeX ──
 function isGarbageText(text) {
@@ -501,6 +502,9 @@ export default function ResumeEditor({ job }) {
   const [pdfEmail, setPdfEmail] = useState(profile?.email || '');
   const [view, setView] = useState('editor');
   const [saved, setSaved] = useState(false);
+  const latexMsg = useLoadingMessage('latex');
+  const suggestMsg = useLoadingMessage('suggestions');
+  const rewriteMsg = useLoadingMessage('rewriting');
 
   useEffect(() => {
     const rt = profile?.resume_text || '';
@@ -692,7 +696,7 @@ TARGET: ${job?.title} at ${job?.company}`,
           {generating ? (
             <div style={{ textAlign: 'center', padding: 30 }}>
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" style={{ margin: '0 auto' }} />
-              <p style={{ color: C.t3, fontSize: 12, marginTop: 10 }}>Generating LaTeX resume...</p>
+              <p style={{ color: C.t3, fontSize: 12, marginTop: 10 }} className="animate-pulse">{latexMsg}</p>
             </div>
           ) : (
             <>
@@ -746,7 +750,7 @@ TARGET: ${job?.title} at ${job?.company}`,
           {analyzing ? (
             <div style={{ textAlign: 'center', padding: 30 }}>
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" style={{ margin: '0 auto' }} />
-              <p style={{ color: C.t3, fontSize: 12, marginTop: 10 }}>Comparing your resume to this job description...</p>
+              <p style={{ color: C.t3, fontSize: 12, marginTop: 10 }} className="animate-pulse">{suggestMsg}</p>
             </div>
           ) : suggestions ? (
             <>

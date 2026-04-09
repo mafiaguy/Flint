@@ -3,6 +3,7 @@ import { pdf, Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer
 import { C, MONO } from '../../theme';
 import { db } from '../../api';
 import useStore from '../../store';
+import { useLoadingMessage } from '../ui/loading-message';
 
 // PDF styles
 const pdfStyles = StyleSheet.create({
@@ -54,6 +55,7 @@ export default function CoverLetterEditor({ job }) {
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [pdfEmail, setPdfEmail] = useState(profile?.email || '');
+  const coverMsg = useLoadingMessage('cover');
 
   const generate = async () => {
     setGenerating(true);
@@ -145,9 +147,9 @@ export default function CoverLetterEditor({ job }) {
       {/* Loading state */}
       {generating && (
         <div style={{ textAlign: 'center', padding: 30 }}>
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
-          <p style={{ color: C.t3, fontSize: 12, marginTop: 10 }}>
-            Crafting a tailored cover letter...
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" style={{ margin: '0 auto' }} />
+          <p style={{ color: C.t3, fontSize: 12, marginTop: 10 }} className="animate-pulse">
+            {coverMsg}
           </p>
         </div>
       )}

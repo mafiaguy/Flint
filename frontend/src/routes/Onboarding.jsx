@@ -109,13 +109,13 @@ export default function Onboarding() {
         {loading && (
           <div className="flex items-center gap-2 py-2">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted border-t-foreground" />
-            <span className="text-xs text-muted-foreground">Thinking...</span>
+            <span className="text-xs text-muted-foreground animate-pulse">Reading between the lines of your message...</span>
           </div>
         )}
         {completing && (
           <div className="py-6 text-center animate-in fade-in">
             <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-green-400" />
-            <p className="mt-3 text-sm font-medium text-green-400">Profile saved! Finding matches...</p>
+            <p className="mt-3 text-sm font-medium text-green-400">Profile saved! Scanning 10,000+ jobs for you...</p>
           </div>
         )}
         <div ref={bottomRef} />

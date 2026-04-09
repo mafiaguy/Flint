@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/card';
 import { db } from '@/api';
 import useStore from '@/store';
 import { PIPELINE_STAGES } from '@/theme';
+import { useLoadingMessage } from '@/components/ui/loading-message';
 
 function AppCard({ app, isDragging, onUpdateNotes, onInterviewPrep, onDelete, onMoveStage }) {
   const [expanded, setExpanded] = useState(false);

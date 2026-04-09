@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import LoadingMessage from '@/components/ui/loading-message';
 import useStore from '@/store';
 
 function MatchCard({ match }) {
@@ -79,8 +80,8 @@ export default function Matches() {
 
   if (loading && matches.length === 0) {
     return (
-      <div className="flex items-center justify-center p-16">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-foreground" />
+      <div className="p-16">
+        <LoadingMessage category="matching" />
       </div>
     );
   }
