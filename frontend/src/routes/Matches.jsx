@@ -41,10 +41,11 @@ function MatchCard({ match }) {
 }
 
 export default function Matches() {
-  const { matches, loading, loadMatches, refreshMatches, profile } = useStore();
+  const { matches, loading, loadMatches, refreshMatches, profile, applications } = useStore();
   const navigate = useNavigate();
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [hideApplied, setHideApplied] = useState(false);
 
   useEffect(() => {
     if (matches.length === 0) loadMatches();
@@ -56,12 +57,16 @@ export default function Matches() {
     setRefreshing(false);
   };
 
+  const appliedJobIds = useMemo(() => new Set((applications || []).map((a) => a.job_id)), [applications]);
+
   const { filtered, counts } = useMemo(() => {
-    const strong = matches.filter((m) => m.score >= 0.7);
-    const stretch = matches.filter((m) => m.score >= 0.4 && m.score < 0.7);
-    const f = filter === 'strong' ? strong : filter === 'stretch' ? stretch : matches;
-    return { filtered: f, counts: { all: matches.length, strong: strong.length, stretch: stretch.length } };
-  }, [matches, filter]);
+    let base = matches;
+    if (hideApplied) base = base.filter((m) => !appliedJobIds.has(m.job_id));
+    const strong = base.filter((m) => m.score >= 0.7);
+    const stretch = base.filter((m) => m.score >= 0.4 && m.score < 0.7);
+    const f = filter === 'strong' ? strong : filter === 'stretch' ? stretch : base;
+    return { filtered: f, counts: { all: base.length, strong: strong.length, stretch: stretch.length } };
+  }, [matches, filter, hideApplied, appliedJobIds]);
 
   if (loading && matches.length === 0) {
     return (
@@ -93,6 +98,10 @@ export default function Matches() {
               {f.label} ({counts[f.id]})
             </Button>
           ))}
+          <div className="flex-1" />
+          <Button variant={hideApplied ? 'secondary' : 'ghost'} size="sm" onClick={() => setHideApplied(!hideApplied)}>
+            Hide applied
+          </Button>
         </div>
       )}
 
