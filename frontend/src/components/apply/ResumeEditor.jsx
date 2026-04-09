@@ -7,10 +7,42 @@ import useStore from '../../store';
 // ── Detect garbage / LaTeX ──
 function isGarbageText(text) {
   if (!text || text.length < 20) return true;
-  return /^%PDF|obj\s*<<|\/Filter\s*\/FlateDecode|endobj|xref|startxref/.test(text);
+  // Raw PDF binary
+  if (/^%PDF|obj\s*<<|\/Filter\s*\/FlateDecode|endobj|xref|startxref/.test(text)) return true;
+  // AI advice mixed with LaTeX (prose before \documentclass)
+  if (/\\documentclass/.test(text)) {
+    const beforeDoc = text.slice(0, text.indexOf('\\documentclass'));
+    // If there's substantial non-comment prose before \documentclass, it's mixed garbage
+    const proseLines = beforeDoc.split('\n').filter(l => l.trim() && !l.trim().startsWith('%'));
+    if (proseLines.some(l => /\b(consider|focus|highlight|leverage|tailor|network|potential|companies)\b/i.test(l))) return true;
+  }
+  return false;
 }
 function isLatex(text) {
   return text && /\\(section|begin|documentclass|textbf|item|href|resumeSubheading)\b/.test(text);
+}
+// Extract clean LaTeX from mixed garbage (if \documentclass exists)
+function extractCleanLatex(text) {
+  if (!text) return '';
+  const docIdx = text.indexOf('\\documentclass');
+  if (docIdx === -1) return '';
+  let latex = text.slice(docIdx);
+  // Remove any non-LaTeX prose injected between LaTeX lines
+  const lines = latex.split('\n');
+  const cleanLines = lines.filter(line => {
+    const t = line.trim();
+    if (!t) return true; // keep blank lines
+    if (t.startsWith('%')) return true; // keep comments
+    if (t.startsWith('\\') || t.startsWith('{') || t.startsWith('}')) return true; // LaTeX commands
+    // Keep lines that look like LaTeX content (inside environments)
+    if (/^[a-zA-Z]/.test(t) && !/^\d+\.\s\*\*/.test(t) && !/^\*\s/.test(t) && !/^By focusing|^Some potential|^Key companies/i.test(t)) return true;
+    // Filter out obvious AI prose
+    if (/\*\*.*\*\*/.test(t)) return false; // markdown bold
+    if (/^\d+\.\s/.test(t) && /\b(consider|focus|highlight|leverage)\b/i.test(t)) return false;
+    if (/^\*\s/.test(t) && !/\\/.test(t)) return false; // markdown bullet
+    return true;
+  });
+  return cleanLines.join('\n').trim();
 }
 
 // ── LaTeX → structured AST ──
@@ -443,9 +475,13 @@ export default function ResumeEditor({ job }) {
   useEffect(() => {
     const rt = profile?.resume_text || '';
     if (isLatex(rt)) {
-      setLatexSrc(rt);
-      setOriginalLatex(rt);
-      setNodes(parseLatexToAST(rt));
+      // If it's mixed garbage, extract just the LaTeX part
+      const clean = isGarbageText(rt) ? extractCleanLatex(rt) : rt;
+      if (clean) {
+        setLatexSrc(clean);
+        setOriginalLatex(clean);
+        setNodes(parseLatexToAST(clean));
+      }
     }
   }, []);
 
@@ -482,6 +518,7 @@ ${src.slice(0, 6000)}`,
   const saveToProfile = async () => {
     await db.saveProfile({ resume_text: latexSrc });
     setProfile({ ...profile, resume_text: latexSrc });
+    setOriginalLatex(latexSrc); // saved version becomes the new baseline for diffs
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
