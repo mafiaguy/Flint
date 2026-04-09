@@ -124,7 +124,7 @@ export default function Tracker() {
     return grouped;
   }, [applications]);
 
-  const activeStages = PIPELINE_STAGES.filter((s) => (columns[s.id]?.length > 0) || ['applied', 'interview', 'offer'].includes(s.id));
+  const activeStages = PIPELINE_STAGES.filter((s) => (columns[s.id]?.length > 0) || ['applied', 'interview', 'offer', 'not_selected'].includes(s.id));
 
   const handleDragEnd = (event) => {
     setActiveId(null);

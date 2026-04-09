@@ -36,6 +36,7 @@ export const PIPELINE_STAGES = [
   { id: "second_interview",  label: "Second Interview", color: "#ec4899" },
   { id: "offer",            label: "Offer",            color: "#22c55e" },
   { id: "accepted",         label: "Accepted",         color: "#10b981" },
+  { id: "not_selected",     label: "Not Selected",     color: "#f97316" },
   { id: "rejected",         label: "Rejected",         color: "#ef4444" },
   { id: "withdrawn",        label: "Withdrawn",        color: "#71717a" },
 ];
