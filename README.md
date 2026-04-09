@@ -1,231 +1,297 @@
-# 🔥 FLINT — Spark Your Next Move
+# flint
 
-Zero-config, open-source job search tool. Users open the site, jobs are already there. No API keys, no signup, no friction.
+Open-source AI job search agent. Upload your resume, get matched with jobs from 9 sources, apply with tailored cover letters and resumes.
 
-**9 job sources** → LinkedIn, Adzuna, Greenhouse, Lever, Ashby, Workable, HackerNews, Naukri, Apify  
-**AI-powered** → match scoring, cover letters, career chat (Llama 3.3 70B via Groq)  
-**50+ company boards** → Cloudflare, Datadog, Razorpay, OpenAI, Stripe, Vercel, and more  
-**$0/month** → runs entirely on free tiers
+**Live:** [mafiaguy.github.io/flint](https://mafiaguy.github.io/flint)
+
+---
+
+## What it does
+
+1. **Scrapes jobs** from LinkedIn, Greenhouse, Ashby, Adzuna, Lever, Workable, HackerNews, Naukri — every 8 hours, automatically.
+2. **Matches them to your resume** using AI (Gemini Flash + Groq Llama 3.3). Each job gets a score, match reasons, strengths, and gaps.
+3. **Helps you apply** with one-click cover letters and resume tailoring — both editable, both exportable as PDF.
+4. **Tracks your pipeline** from Applied → Interview → Offer with a drag-and-drop Kanban board.
+
+Everything runs on free tiers. Total cost: **$0/month**.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  GitHub Actions (cron every 8h, free 2000 min/mo)   │
-│                                                      │
-│  Playwright ──→ LinkedIn, Naukri                     │
-│  fetch()    ──→ Greenhouse (25 boards)               │
-│  fetch()    ──→ Lever (9 boards)                     │
-│  fetch()    ──→ Ashby (9 boards)                     │
-│  fetch()    ──→ Workable (7 boards)                  │
-│  fetch()    ──→ Adzuna API (10 countries)             │
-│  fetch()    ──→ HackerNews Who's Hiring              │
-│  fetch()    ──→ Apify LinkedIn (fallback)             │
-└──────────────────────┬──────────────────────────────┘
-                       │ writes to
-                       ▼
-┌─────────────────────────────────────────────────────┐
-│  Supabase (free tier: 500MB DB, 50k edge calls/mo)  │
-│                                                      │
-│  PostgreSQL    → jobs table, applications table      │
-│  Edge Function → /ai (proxies Groq, key hidden)      │
-│  Edge Function → /search-jobs (proxies Adzuna live)  │
-└──────────────────────┬──────────────────────────────┘
-                       │ reads from
-                       ▼
-┌─────────────────────────────────────────────────────┐
-│  GitHub Pages (free static hosting)                  │
-│                                                      │
-│  React SPA → zero config for users                   │
-│  No API keys needed → just open and use              │
-└─────────────────────────────────────────────────────┘
+GitHub Actions (every 8h)
+  └─ scraper (9 sources, 50+ company boards)
+       └─ writes to Supabase PostgreSQL
+            └─ triggers AI matching (Gemini Flash)
+
+GitHub Pages (static SPA)
+  └─ React + shadcn/ui + Tailwind
+       └─ reads from Supabase
+       └─ calls edge functions for AI, search, resume parsing
+
+Supabase
+  ├─ PostgreSQL (jobs, matches, applications, profiles)
+  ├─ Edge Functions
+  │   ├─ ai (Gemini Flash + Groq, with SHA-256 cache)
+  │   ├─ match-jobs (batch scoring orchestrator)
+  │   ├─ parse-resume (PDF text extraction)
+  │   ├─ search-jobs (Adzuna live search proxy)
+  │   ├─ salary-insights (SQL aggregation)
+  │   └─ scrape-form (Greenhouse/Lever form detection)
+  ├─ Auth (Google + GitHub OAuth)
+  └─ Storage (resume uploads)
 ```
 
 ---
 
-## Step-by-Step Setup (30 minutes)
+## Tech stack
 
-### Step 1: Fork or clone this repo
+| Layer | Tech |
+|---|---|
+| Frontend | React 18, Vite, Tailwind CSS v4, shadcn/ui, Zustand, react-router-dom (HashRouter) |
+| Backend | Supabase (PostgreSQL, Edge Functions, Auth, Storage) |
+| AI | Gemini Flash 2.0 (heavy tasks), Groq Llama 3.3 70B (speed tasks), SHA-256 response cache |
+| Scraper | Node.js, Playwright, GitHub Actions |
+| PDF | @react-pdf/renderer (client-side generation) |
+| Drag & drop | @dnd-kit |
+| Hosting | GitHub Pages (frontend), Supabase (backend) |
+
+---
+
+## Features
+
+**AI matching** — Upload your resume once. Every job from 9 sources gets scored against your skills, experience, and preferences.
+
+**Chat onboarding** — Instead of a form, a conversational AI asks what you're looking for, extracts structured profile data.
+
+**Cover letter generator** — One click generates a tailored cover letter. Edit in-browser, download as PDF.
+
+**Resume tailoring** — AI analyzes each job posting and suggests specific changes: keywords to add, bullets to reorder, summary rewrite.
+
+**Application tracker** — Kanban board with stages: Applied, First Call, Interview, Second Interview, Offer, Accepted/Rejected. Drag to update.
+
+**Interview prep** — Auto-generated when you move a job to Interview stage. Behavioral questions, technical questions, company research, salary talking points.
+
+**Skill gap analysis** — Aggregates gaps from your matches, recommends skills to develop with learning resources.
+
+**Salary insights** — Market rates from scraped job data. 25th/median/75th percentile for your role and region. Pure SQL, no AI cost.
+
+**Follow-up reminders** — Applications sitting in Applied for 7+ days get flagged.
+
+---
+
+## Setup (20 minutes)
+
+### Prerequisites
+
+Free accounts on:
+- [Supabase](https://supabase.com)
+- [Google AI Studio](https://aistudio.google.com/apikey) (Gemini API key)
+- [Groq](https://console.groq.com) (API key)
+- [Adzuna](https://developer.adzuna.com) (API key)
+
+### 1. Fork and clone
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/flint.git
 cd flint
 ```
 
-### Step 2: Create a Supabase project
+### 2. Supabase project
 
-1. Go to [supabase.com](https://supabase.com) → Sign up (free) → New Project
-2. Pick any region, set a database password
-3. Wait for project to finish provisioning (~2 min)
-4. Go to **Settings → API** and copy:
-   - **Project URL** (looks like `https://abc123.supabase.co`)
-   - **anon public key** (starts with `eyJ...`)
-   - **service_role key** (starts with `eyJ...` — keep this SECRET)
+1. [supabase.com](https://supabase.com) → New Project
+2. Note your **Project URL**, **anon key**, and **service_role key** from Settings → API
 
-### Step 3: Run the database migration
+### 3. Run migrations
 
-1. In Supabase dashboard, go to **SQL Editor → New Query**
-2. Open `supabase/migrations/001_init.sql` from this repo
-3. Paste the entire contents and click **Run**
-4. You should see "Success" — this creates the `jobs` and `applications` tables
+In Supabase → SQL Editor, run each file in order:
 
-> **"Is it safe to have migrations in a public repo?"**
-> Yes. Every open-source project does this (Supabase itself, PostHog, Cal.com). Migrations are just schema — no secrets, no data.
+```
+supabase/migrations/001_init.sql
+supabase/migrations/002_add_auth.sql
+supabase/migrations/03_add_questions.sql
+supabase/migrations/004_apply_queue.sql
+supabase/migrations/005_enhanced_profiles.sql
+supabase/migrations/006_job_matches.sql
+supabase/migrations/007_enhanced_applications.sql
+supabase/migrations/008_onboarding_messages.sql
+supabase/migrations/009_ai_cache.sql
+```
 
-### Step 4: Deploy Supabase Edge Functions
+### 4. Enable auth providers
+
+Supabase → Authentication → Providers:
+- Enable **Google** (needs OAuth client from [Google Cloud Console](https://console.cloud.google.com/apis/credentials))
+- Enable **GitHub** (needs OAuth App from GitHub → Settings → Developer settings)
+- Redirect URL: `https://YOUR_PROJECT.supabase.co/auth/v1/callback`
+
+### 5. Create storage bucket
+
+Supabase → Storage → New Bucket:
+- Name: `resumes`
+- Public: OFF
+
+### 6. Deploy edge functions
 
 ```bash
-# Install Supabase CLI
 npm install -g supabase
-
-# Login
 supabase login
-
-# Link to your project (find ref in Supabase dashboard URL)
 supabase link --project-ref YOUR_PROJECT_REF
 
-# Set secrets — these stay server-side, users never see them
-supabase secrets set GROQ_API_KEY=gsk_your_key_here
-supabase secrets set ADZUNA_APP_ID=your_app_id
-supabase secrets set ADZUNA_APP_KEY=your_app_key
-supabase secrets set SUPABASE_URL=https://your-project.supabase.co
-supabase secrets set SUPABASE_SERVICE_ROLE_KEY=eyJ_your_service_role_key
+# Set secrets
+supabase secrets set GEMINI_API_KEY=your_gemini_key
+supabase secrets set GROQ_API_KEY=gsk_your_groq_key
+supabase secrets set ADZUNA_APP_ID=your_id
+supabase secrets set ADZUNA_APP_KEY=your_key
 
-# Deploy both functions
+# Deploy
 supabase functions deploy ai
+supabase functions deploy match-jobs
+supabase functions deploy parse-resume
 supabase functions deploy search-jobs
+supabase functions deploy scrape-form --no-verify-jwt
+supabase functions deploy salary-insights
 ```
 
-**Where to get the keys:**
-| Key | Where | Cost |
-|---|---|---|
-| GROQ_API_KEY | [console.groq.com](https://console.groq.com) → API Keys | Free (14,400 req/day) |
-| ADZUNA_APP_ID | [developer.adzuna.com](https://developer.adzuna.com) → Register | Free |
-| ADZUNA_APP_KEY | Same as above | Free |
-| APIFY_TOKEN | [apify.com](https://apify.com) → Settings → Integrations | Free tier |
+### 7. GitHub secrets
 
-### Step 5: Configure GitHub Secrets (for the scraper)
+Repo → Settings → Secrets and variables → Actions:
 
-1. In your GitHub repo, go to **Settings → Secrets and variables → Actions**
-2. Click **New repository secret** for each:
-
-| Secret name | Value |
+| Secret | Value |
 |---|---|
-| `SUPABASE_URL` | Your Supabase Project URL |
-| `SUPABASE_SERVICE_KEY` | Your Supabase **service_role** key |
-| `ADZUNA_APP_ID` | Your Adzuna App ID |
-| `ADZUNA_APP_KEY` | Your Adzuna App Key |
-| `APIFY_TOKEN` | Your Apify API token (optional) |
+| `SUPABASE_URL` | `https://xxx.supabase.co` |
+| `SUPABASE_SERVICE_KEY` | service_role key |
+| `SUPABASE_ANON_KEY` | anon/public key |
+| `ADZUNA_APP_ID` | Adzuna App ID |
+| `ADZUNA_APP_KEY` | Adzuna App Key |
+| `GROQ_API_KEY` | Groq API key (optional, for scraper) |
+| `APIFY_TOKEN` | Apify token (optional) |
 
-### Step 6: Update the frontend
+### 8. Enable GitHub Pages
 
-Open `frontend/index.html` and set your Supabase public credentials at the top:
+Repo → Settings → Pages → Source: **GitHub Actions**
 
-```javascript
-window.FLINT_CONFIG = {
-  SUPABASE_URL: "https://your-project.supabase.co",
-  SUPABASE_KEY: "eyJ_your_anon_key_here",
-};
+### 9. Push and deploy
+
+```bash
+git push origin main
 ```
 
-> The anon key is safe to commit — it's designed to be public. Supabase uses Row Level Security (RLS) to protect data.
+Two workflows trigger:
+- **Build & Deploy Frontend** — builds and deploys to GitHub Pages
+- **Scraper** runs on cron (or trigger manually from Actions tab)
 
-### Step 7: Enable GitHub Pages
+### 10. Visit your app
 
-1. Go to repo **Settings → Pages**
-2. Source: **Deploy from a branch**
-3. Branch: `main`, folder: `/frontend`
-4. Click Save
-5. Your site will be live at `https://YOUR_USERNAME.github.io/flint/`
-
-### Step 8: Run the first scrape
-
-1. Go to repo **Actions** tab
-2. Click **"🔥 FLINT Job Scraper"** in the sidebar
-3. Click **"Run workflow"** → **"Run workflow"**
-4. Wait 5-10 minutes for it to finish
-5. Check your Supabase dashboard → Table Editor → `jobs` table — it should have data!
-
-After this, the scraper runs automatically every 8 hours.
-
-### Step 9: Open your site 🎉
-
-Go to `https://YOUR_USERNAME.github.io/flint/` — jobs should be loaded!
+```
+https://YOUR_USERNAME.github.io/flint/
+```
 
 ---
 
-## Repo Structure
+## Repo structure
 
 ```
 flint/
-├── .github/
-│   └── workflows/
-│       └── scrape-jobs.yml         ← Runs every 8h on GitHub Actions
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx                    # Layout: sidebar + routes
+│   │   ├── store.js                   # Zustand state management
+│   │   ├── api.js                     # Supabase client + helpers
+│   │   ├── routes/
+│   │   │   ├── Landing.jsx            # Public landing page
+│   │   │   ├── Onboarding.jsx         # Chat-based profile setup
+│   │   │   ├── Matches.jsx            # AI-matched jobs
+│   │   │   ├── JobDetail.jsx          # Job + cover letter + resume tailor
+│   │   │   ├── Browse.jsx             # Manual job search
+│   │   │   ├── Tracker.jsx            # Kanban application tracker
+│   │   │   └── Profile.jsx            # Profile, skill gap, salary insights
+│   │   └── components/
+│   │       ├── app-sidebar.jsx        # shadcn sidebar with nav + user
+│   │       ├── apply/                 # Cover letter + resume editors (PDF export)
+│   │       └── ui/                    # shadcn components
+│   └── index.html
 ├── scraper/
-│   ├── scrape.js                   ← The big scraper (9 sources)
+│   ├── scrape.js                      # 9-source scraper (~1000 lines)
 │   └── package.json
 ├── supabase/
-│   ├── migrations/
-│   │   └── 001_init.sql            ← Database schema (safe for public repo)
+│   ├── migrations/                    # 9 SQL migrations
 │   └── functions/
-│       ├── ai/
-│       │   └── index.ts            ← Groq LLM proxy (key hidden server-side)
-│       └── search-jobs/
-│           └── index.ts            ← Adzuna live search proxy
-├── frontend/
-│   └── index.html                  ← Complete React SPA (GitHub Pages)
-└── README.md                       ← You are here
+│       ├── ai/                        # Gemini + Groq with cache
+│       ├── match-jobs/                # Batch matching orchestrator
+│       ├── parse-resume/              # PDF text extraction
+│       ├── search-jobs/               # Adzuna live search
+│       ├── salary-insights/           # SQL salary aggregation
+│       └── scrape-form/               # Form field detection
+└── .github/workflows/
+    ├── scrape-jobs.yml                # Cron every 8h + post-scrape matching
+    └── deploy-pages.yml               # Auto-deploy on frontend changes
 ```
 
-## Job Sources
+---
 
-| Source | Method | What it scrapes |
+## AI provider routing
+
+| Feature | Provider | Why |
 |---|---|---|
-| **LinkedIn** | Playwright (public pages) | Jobs from public search results |
-| **Adzuna** | REST API | 10 countries: IN, GB, DE, FR, US, CA, AU, PL, AT, NZ |
-| **Apify** | API (LinkedIn fallback) | LinkedIn via cloud Playwright actor |
-| **Greenhouse** | Public JSON API | 25 companies including Cloudflare, Datadog, GitLab, Razorpay |
-| **Lever** | Public JSON API | 9 companies including Vercel, Neon, Supabase, Temporal |
-| **Ashby** | Public JSON API | 9 companies including Notion, OpenAI, Anthropic, Linear |
-| **Workable** | Public Widget API | 7 companies including Zerodha, PhonePe, Swiggy, BrowserStack |
-| **HackerNews** | Algolia API | Monthly "Who's Hiring" thread |
-| **Naukri** | Playwright | India-specific job listings |
+| Chat onboarding | Gemini Flash | Conversational quality |
+| Batch matching | Gemini Flash | Heavy lifting, 8 jobs/call |
+| Cover letters | Gemini Flash | Writing quality |
+| Resume tailoring | Gemini Flash | Analytical + writing |
+| Skill gap analysis | Gemini Flash | One-off aggregation |
+| Match scoring | Groq (Llama 3.3) | Speed |
+| Interview prep | Groq | Speed, low volume |
+| Career chat | Groq | Fast, interactive |
+| Salary insights | No AI (SQL) | Pure data, zero cost |
 
-## Adding More Companies
+All providers have automatic fallback. Responses are cached by SHA-256 input hash (cuts API usage ~40-50%).
 
-Open `scraper/scrape.js` and add to the relevant array:
+---
+
+## Job sources
+
+| Source | Method | Coverage |
+|---|---|---|
+| LinkedIn | Playwright | Public search results |
+| Adzuna | REST API | 10 countries |
+| Greenhouse | Public JSON API | 50+ company boards |
+| Ashby | Public JSON API | 25+ boards (Notion, OpenAI, Linear...) |
+| Lever | Public JSON API | Multiple boards |
+| Workable | Widget API | Indian companies (Zerodha, Swiggy...) |
+| HackerNews | Algolia API | Monthly "Who's Hiring" |
+| Naukri | Playwright | India-specific |
+| Apify | API | LinkedIn fallback |
+
+### Adding a company
 
 ```javascript
-// Greenhouse — check: https://boards-api.greenhouse.io/v1/boards/SLUG/jobs
+// In scraper/scrape.js
 GREENHOUSE_BOARDS.push({ slug: "stripe", name: "Stripe" });
-
-// Lever — check: https://api.lever.co/v0/postings/SLUG?mode=json
-LEVER_BOARDS.push({ slug: "figma", name: "Figma" });
-
-// Ashby — check: https://api.ashbyhq.com/posting-api/job-board/SLUG
 ASHBY_BOARDS.push({ slug: "cursor", name: "Cursor" });
 ```
 
-## Free Tier Limits
+---
 
-| Service | Free Tier | More Than Enough For |
+## Free tier limits
+
+| Service | Free Tier | Flint usage |
 |---|---|---|
-| **Supabase** | 500MB database, 50k Edge Function invocations/month | ~50k jobs + heavy AI usage |
-| **Groq** | 14,400 requests/day on Llama 3.3 70B | ~600 AI matches per hour |
-| **Adzuna** | Free API key, reasonable rate limits | All live searches |
-| **Apify** | Free tier with monthly credits | ~30 LinkedIn scrapes/month |
-| **GitHub Actions** | 2,000 minutes/month | 3 scrapes/day = ~300 min/month |
-| **GitHub Pages** | Unlimited static hosting | The entire frontend |
+| Supabase | 500MB DB, 50k edge calls/mo | Well within limits |
+| Gemini Flash | 15 RPM, 1M tokens/day | Plenty for matching + generation |
+| Groq | 14,400 req/day | Plenty for chat + prep |
+| Adzuna | Free API key | All live searches |
+| GitHub Actions | 2,000 min/month | ~300 min/month (3 scrapes/day) |
+| GitHub Pages | Unlimited | Static frontend |
 
-**Total monthly cost: $0**
+---
 
 ## License
 
-MIT — do whatever you want with it.
+MIT
 
 ## Credits
 
-Inspired by [career-ops](https://github.com/santifer/career-ops).  
-Built with [Supabase](https://supabase.com), [Playwright](https://playwright.dev), [Groq](https://groq.com), and [Adzuna](https://developer.adzuna.com).
+Built by [mafiaguy](https://mafiaguy.github.io).
+
+Uses [Supabase](https://supabase.com), [shadcn/ui](https://ui.shadcn.com), [Groq](https://groq.com), [Google AI](https://ai.google.dev), [Adzuna](https://developer.adzuna.com), and [Playwright](https://playwright.dev).
