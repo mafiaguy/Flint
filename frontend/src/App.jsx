@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import { globalCSS, C } from './theme';
 import useStore from './store';
 import Spinner from './components/ui/Spinner';
-import Header from './components/layout/Header';
+import Sidebar from './components/layout/Sidebar';
 
 import Landing from './routes/Landing';
 import Matches from './routes/Matches';
@@ -16,8 +16,8 @@ const Profile = lazy(() => import('./routes/Profile'));
 
 function PageLoader() {
   return (
-    <div style={{ padding: '60px 32px', textAlign: 'center' }}>
-      <Spinner size={28} color={C.t3} />
+    <div style={{ padding: '60px 32px' }}>
+      <Spinner size={24} color={C.t3} />
     </div>
   );
 }
@@ -42,15 +42,14 @@ function AuthGuard({ children }) {
   }
 
   if (!user) return <Navigate to="/" replace />;
-
   return children;
 }
 
 function AppLayout() {
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column" }}>
-      <Header />
-      <main style={{ flex: 1, padding: "24px 32px 60px", maxWidth: 1200, width: "100%", margin: "0 auto" }}>
+    <div style={{ display: "flex", minHeight: "100vh", background: C.bg }}>
+      <Sidebar />
+      <main style={{ flex: 1, minWidth: 0, overflow: "auto", padding: "24px 40px 60px" }}>
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/matches" element={<Matches />} />
