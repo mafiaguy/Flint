@@ -5,11 +5,9 @@ import useStore from './store';
 import Spinner from './components/ui/Spinner';
 import Header from './components/layout/Header';
 
-// Eager: Landing and Matches load immediately
 import Landing from './routes/Landing';
 import Matches from './routes/Matches';
 
-// Lazy: Heavy routes load on demand (JobDetail pulls in @react-pdf/renderer, Tracker pulls in @dnd-kit)
 const Onboarding = lazy(() => import('./routes/Onboarding'));
 const JobDetail = lazy(() => import('./routes/JobDetail'));
 const Browse = lazy(() => import('./routes/Browse'));
@@ -18,8 +16,8 @@ const Profile = lazy(() => import('./routes/Profile'));
 
 function PageLoader() {
   return (
-    <div style={{ padding: '60px 16px', textAlign: 'center' }}>
-      <Spinner size={28} color={C.acc} />
+    <div style={{ padding: '60px 32px', textAlign: 'center' }}>
+      <Spinner size={28} color={C.t3} />
     </div>
   );
 }
@@ -37,7 +35,7 @@ function AuthGuard({ children }) {
 
   if (user === undefined) {
     return (
-      <div style={{ minHeight: "100vh", background: "#08080c", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <Spinner />
       </div>
     );
@@ -50,9 +48,9 @@ function AuthGuard({ children }) {
 
 function AppLayout() {
   return (
-    <div style={{ minHeight: "100vh", background: "#08080c" }}>
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column" }}>
       <Header />
-      <main style={{ maxWidth: 1100, margin: "0 auto", width: "100%" }}>
+      <main style={{ flex: 1, padding: "24px 32px 60px", maxWidth: 1200, width: "100%", margin: "0 auto" }}>
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/matches" element={<Matches />} />

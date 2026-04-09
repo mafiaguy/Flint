@@ -70,7 +70,7 @@ export default function Browse() {
   });
 
   return (
-    <div style={{ padding: "24px 32px 60px" }}>
+    <div>
       {/* Header */}
       <h2 style={{ color: C.t1, fontSize: 20, fontWeight: 700, marginBottom: 16 }}>Browse</h2>
 
