@@ -1,9 +1,9 @@
 import { useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { globalCSS, C } from './theme';
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
+import { Separator } from '@/components/ui/separator';
+import { AppSidebar } from '@/components/app-sidebar';
 import useStore from './store';
-import Spinner from './components/ui/Spinner';
-import Sidebar from './components/layout/Sidebar';
 
 import Landing from './routes/Landing';
 import Matches from './routes/Matches';
@@ -16,8 +16,8 @@ const Profile = lazy(() => import('./routes/Profile'));
 
 function PageLoader() {
   return (
-    <div style={{ padding: '60px 32px' }}>
-      <Spinner size={24} color={C.t3} />
+    <div className="flex items-center justify-center p-16">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-foreground" />
     </div>
   );
 }
@@ -31,12 +31,12 @@ function AuthGuard({ children }) {
     if (user && profile && !profile.onboarding_complete && !profile.role && location.pathname !== '/onboarding') {
       navigate('/onboarding');
     }
-  }, [user, profile, location.pathname]);
+  }, [user, profile, location.pathname, navigate]);
 
   if (user === undefined) {
     return (
-      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Spinner />
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-foreground" />
       </div>
     );
   }
@@ -45,23 +45,44 @@ function AuthGuard({ children }) {
   return children;
 }
 
-function AppLayout() {
+function PageHeader({ title }) {
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: C.bg }}>
-      <Sidebar />
-      <main style={{ flex: 1, minWidth: 0, overflow: "auto", padding: "24px 40px 60px" }}>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/matches" element={<Matches />} />
-            <Route path="/job/:id" element={<JobDetail />} />
-            <Route path="/browse" element={<Browse />} />
-            <Route path="/tracker" element={<Tracker />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="*" element={<Navigate to="/matches" replace />} />
-          </Routes>
-        </Suspense>
-      </main>
-    </div>
+    <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+      <SidebarTrigger className="-ml-1" />
+      <Separator orientation="vertical" className="mr-2 data-[orientation=vertical]:h-4" />
+      <span className="text-sm font-medium">{title}</span>
+    </header>
+  );
+}
+
+function AppLayout() {
+  const location = useLocation();
+  const pageTitle = {
+    '/matches': 'Matches',
+    '/browse': 'Browse',
+    '/tracker': 'Tracker',
+    '/profile': 'Profile',
+  }[location.pathname] || (location.pathname.startsWith('/job/') ? 'Job Details' : 'Matches');
+
+  return (
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <PageHeader title={pageTitle} />
+        <main className="flex-1 p-6">
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/matches" element={<Matches />} />
+              <Route path="/job/:id" element={<JobDetail />} />
+              <Route path="/browse" element={<Browse />} />
+              <Route path="/tracker" element={<Tracker />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="*" element={<Navigate to="/matches" replace />} />
+            </Routes>
+          </Suspense>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 
@@ -74,21 +95,18 @@ export default function App() {
   }, []);
 
   return (
-    <>
-      <style>{globalCSS}</style>
-      <Routes>
-        <Route path="/" element={user ? <Navigate to="/matches" replace /> : <Landing />} />
-        <Route path="/onboarding" element={
-          <AuthGuard>
-            <Suspense fallback={<PageLoader />}>
-              <Onboarding />
-            </Suspense>
-          </AuthGuard>
-        } />
-        <Route path="/*" element={
-          <AuthGuard><AppLayout /></AuthGuard>
-        } />
-      </Routes>
-    </>
+    <Routes>
+      <Route path="/" element={user ? <Navigate to="/matches" replace /> : <Landing />} />
+      <Route path="/onboarding" element={
+        <AuthGuard>
+          <Suspense fallback={<PageLoader />}>
+            <Onboarding />
+          </Suspense>
+        </AuthGuard>
+      } />
+      <Route path="/*" element={
+        <AuthGuard><AppLayout /></AuthGuard>
+      } />
+    </Routes>
   );
 }

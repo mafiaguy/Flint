@@ -3,7 +3,6 @@ import { pdf, Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer
 import { C, MONO } from '../../theme';
 import { db } from '../../api';
 import useStore from '../../store';
-import Spinner from '../ui/Spinner';
 
 // PDF styles for tailored resume
 const pdfStyles = StyleSheet.create({
@@ -129,7 +128,7 @@ export default function ResumeEditor({ job }) {
         <>
           {analyzing ? (
             <div style={{ textAlign: 'center', padding: 30 }}>
-              <Spinner size={24} color={C.pur} />
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
               <p style={{ color: C.t3, fontSize: 12, marginTop: 10 }}>
                 Analyzing your resume against this job...
               </p>

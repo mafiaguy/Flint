@@ -1,41 +1,10 @@
 import { useState, useRef, useCallback } from 'react';
-import { C, MONO } from '../theme';
-import { db } from '../api';
-import useStore from '../store';
-import Spinner from '../components/ui/Spinner';
-
-function SalaryChart({ data }) {
-  if (!data || data.sample_size < 3) return null;
-  const max = data.max || data.percentile_75 * 1.2;
-  const fmt = (n) => {
-    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-    if (n >= 1000) return `${Math.round(n / 1000)}K`;
-    return String(n);
-  };
-  const bars = [
-    { label: '25th', value: data.percentile_25, color: C.acc },
-    { label: 'Median', value: data.median, color: C.grn },
-    { label: '75th', value: data.percentile_75, color: C.blu },
-  ];
-  return (
-    <div style={{ marginTop: 12 }}>
-      {bars.map((b) => (
-        <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <span style={{ width: 50, fontSize: 12, color: C.t3, textAlign: 'right' }}>{b.label}</span>
-          <div style={{ flex: 1, height: 24, background: C.c2, borderRadius: 4, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', width: `${Math.min((b.value / max) * 100, 100)}%`,
-              background: b.color + '33', borderRadius: 4, display: 'flex', alignItems: 'center', paddingLeft: 8,
-            }}>
-              <span style={{ fontSize: 12, fontFamily: MONO, fontWeight: 600, color: b.color }}>{data.currency} {fmt(b.value)}</span>
-            </div>
-          </div>
-        </div>
-      ))}
-      <p style={{ fontSize: 12, color: C.t3, marginTop: 4 }}>Based on {data.sample_size} listings, last 90 days</p>
-    </div>
-  );
-}
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { db } from '@/api';
+import useStore from '@/store';
 
 export default function Profile() {
   const { profile, setProfile, matches, qa, addQA, deleteQA } = useStore();
@@ -47,7 +16,6 @@ export default function Profile() {
   const [salary, setSalary] = useState(null);
   const [salaryLoading, setSalaryLoading] = useState(false);
 
-  // Debounce profile saves — update local state immediately, save to DB after 800ms
   const saveTimerRef = useRef(null);
   const handleFieldChange = useCallback((key, value) => {
     setProfile({ ...profile, [key]: value });
@@ -60,12 +28,6 @@ export default function Profile() {
     if (!file) return;
     const url = await db.uploadResume(file);
     if (url) { setProfile({ ...profile, resume_url: url }); db.parseResume(url); }
-  };
-
-  const handleAddQA = async () => {
-    if (!newQ.trim() || !newA.trim()) return;
-    await addQA(newQ.trim(), newA.trim());
-    setNewQ(''); setNewA('');
   };
 
   const analyzeSkillGap = async () => {
@@ -81,7 +43,7 @@ export default function Profile() {
 
   const loadSalary = async () => {
     setSalaryLoading(true);
-    const roleMap = { sre: 'SRE', platform: 'Platform', devops: 'DevOps', backend: 'Backend', frontend: 'Frontend', fullstack: 'Fullstack', data: 'Data', security: 'Security', cloud: 'Cloud', infrastructure: 'Infrastructure', ml: 'ML/AI', ai: 'ML/AI' };
+    const roleMap = { sre: 'SRE', platform: 'Platform', devops: 'DevOps', backend: 'Backend', frontend: 'Frontend', fullstack: 'Fullstack', data: 'Data', security: 'Security', cloud: 'Cloud' };
     const role = (profile?.role || '').toLowerCase();
     let category = 'Engineering';
     for (const [key, val] of Object.entries(roleMap)) { if (role.includes(key)) { category = val; break; } }
@@ -94,139 +56,113 @@ export default function Profile() {
     { key: 'name', label: 'Name' },
     { key: 'role', label: 'Target role', placeholder: 'Senior SRE' },
     { key: 'experience', label: 'Experience (years)', placeholder: '5' },
-    { key: 'skills', label: 'Key skills', placeholder: 'AWS, K8s, Python, Go' },
+    { key: 'skills', label: 'Key skills', placeholder: 'AWS, K8s, Python, Go', wide: true },
     { key: 'notice', label: 'Notice period', placeholder: '30 days' },
-    { key: 'compensation', label: 'Current compensation', placeholder: '25 LPA' },
-    { key: 'expected', label: 'Expected compensation', placeholder: '65-90 LPA' },
-    { key: 'visa', label: 'Work authorization', placeholder: 'No visa needed' },
+    { key: 'compensation', label: 'Current comp', placeholder: '25 LPA' },
+    { key: 'expected', label: 'Expected comp', placeholder: '65-90 LPA' },
+    { key: 'visa', label: 'Work auth', placeholder: 'No visa needed' },
     { key: 'work_mode', label: 'Work mode', placeholder: 'Remote' },
   ];
 
   return (
     <div>
-      <h2 style={{ color: C.t1, fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Profile</h2>
-
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 24 }}>
+      <div className="mb-6 flex gap-1.5">
         {[{ id: 'profile', label: 'Details' }, { id: 'skills', label: 'Skill gap' }, { id: 'salary', label: 'Salary' }].map((t) => (
-          <button key={t.id} onClick={() => setActiveSection(t.id)} style={{
-            padding: '6px 14px', border: `1px solid ${activeSection === t.id ? C.br : 'transparent'}`,
-            borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
-            background: activeSection === t.id ? C.c1 : 'transparent', color: activeSection === t.id ? C.t1 : C.t3,
-          }}>{t.label}</button>
+          <Button key={t.id} variant={activeSection === t.id ? 'secondary' : 'ghost'} size="sm" onClick={() => setActiveSection(t.id)}>
+            {t.label}
+          </Button>
         ))}
       </div>
 
-      {/* Profile section */}
       {activeSection === 'profile' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
-          {/* Left column: form fields */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Left: form */}
           <div>
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: C.t2, marginBottom: 16 }}>Details</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {fields.map(({ key, label, placeholder }) => (
-                <div key={key} style={{ gridColumn: key === 'skills' ? '1 / -1' : undefined }}>
-                  <label style={{ fontSize: 12, color: C.t3, display: 'block', marginBottom: 4 }}>{label}</label>
-                  <input value={profile?.[key] || ''} onChange={(e) => handleFieldChange(key, e.target.value)} placeholder={placeholder} />
+            <h3 className="mb-4 text-sm font-medium text-muted-foreground">Details</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {fields.map(({ key, label, placeholder, wide }) => (
+                <div key={key} className={wide ? 'col-span-2' : ''}>
+                  <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
+                  <Input value={profile?.[key] || ''} onChange={(e) => handleFieldChange(key, e.target.value)} placeholder={placeholder} />
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Right column: resume + Q&A */}
+          {/* Right: resume + Q&A */}
           <div>
-            {/* Resume */}
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: C.t2, marginBottom: 16 }}>Resume</h3>
-            <div style={{
-              background: C.c1, border: `1px solid ${profile?.resume_url ? C.grn + '33' : C.br}`,
-              borderRadius: 10, padding: 16, marginBottom: 24,
-            }}>
-              <p style={{ color: C.t3, fontSize: 13, marginBottom: 10 }}>
-                {profile?.resume_url ? 'Resume uploaded. Re-upload to replace.' : 'Upload for AI matching and tailoring.'}
+            <h3 className="mb-4 text-sm font-medium text-muted-foreground">Resume</h3>
+            <Card className={`mb-6 p-4 ${profile?.resume_url ? 'border-green-500/30' : ''}`}>
+              <p className="mb-2 text-sm text-muted-foreground">
+                {profile?.resume_url ? 'Resume uploaded. Re-upload to replace.' : 'Upload for AI matching.'}
               </p>
-              <input type="file" accept=".pdf,.doc,.docx" onChange={handleResumeUpload} style={{ fontSize: 13 }} />
-              {profile?.resume_url && (
-                <p style={{ fontSize: 12, color: C.grn, marginTop: 8 }}>{profile.resume_url.split('/').pop()}</p>
-              )}
-            </div>
+              <input type="file" accept=".pdf,.doc,.docx" onChange={handleResumeUpload} className="text-sm" />
+              {profile?.resume_url && <p className="mt-2 text-xs text-green-400">{profile.resume_url.split('/').pop()}</p>}
+            </Card>
 
-            {/* Q&A */}
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: C.t2, marginBottom: 12 }}>Saved Q&A ({qa.length})</h3>
-            {qa.map((q) => (
-              <div key={q.id} style={{
-                background: C.c1, border: `1px solid ${C.br}`, borderRadius: 8, padding: 12,
-                marginBottom: 8, display: 'flex', justifyContent: 'space-between', gap: 8,
-              }}>
-                <div style={{ minWidth: 0 }}>
-                  <p style={{ fontSize: 12, color: C.t3, margin: 0 }}>{q.question}</p>
-                  <p style={{ fontSize: 13, color: C.t1, margin: '3px 0 0' }}>{q.answer}</p>
-                </div>
-                <button onClick={() => deleteQA(q.id)}
-                  style={{ background: 'none', border: 'none', color: C.t3, cursor: 'pointer', fontSize: 14, flexShrink: 0 }}>&times;</button>
-              </div>
-            ))}
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <input value={newQ} onChange={(e) => setNewQ(e.target.value)} placeholder="Question" style={{ flex: 1 }} />
-              <input value={newA} onChange={(e) => setNewA(e.target.value)} placeholder="Answer" style={{ flex: 1 }}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddQA()} />
-              <button onClick={handleAddQA} disabled={!newQ.trim() || !newA.trim()}
-                style={{ padding: '8px 14px', background: C.c1, color: C.t1, border: `1px solid ${C.br}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                Add
-              </button>
+            <h3 className="mb-3 text-sm font-medium text-muted-foreground">Saved Q&A ({qa.length})</h3>
+            <div className="space-y-2">
+              {qa.map((q) => (
+                <Card key={q.id} className="flex items-start justify-between gap-2 p-3">
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">{q.question}</p>
+                    <p className="mt-0.5 text-sm">{q.answer}</p>
+                  </div>
+                  <button onClick={() => deleteQA(q.id)} className="shrink-0 text-muted-foreground hover:text-foreground">&times;</button>
+                </Card>
+              ))}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <Input value={newQ} onChange={(e) => setNewQ(e.target.value)} placeholder="Question" className="flex-1" />
+              <Input value={newA} onChange={(e) => setNewA(e.target.value)} placeholder="Answer" className="flex-1"
+                onKeyDown={(e) => e.key === 'Enter' && newQ && newA && (addQA(newQ, newA), setNewQ(''), setNewA(''))} />
+              <Button variant="outline" size="sm" onClick={() => { if (newQ && newA) { addQA(newQ, newA); setNewQ(''); setNewA(''); } }}>Add</Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Skill gap */}
       {activeSection === 'skills' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <p style={{ fontSize: 13, color: C.t3, margin: 0 }}>Based on {matches?.length || 0} job matches</p>
-            <button onClick={analyzeSkillGap} disabled={skillLoading} style={{
-              padding: '8px 16px', background: C.c1, border: `1px solid ${C.br}`, borderRadius: 8,
-              color: C.t1, cursor: skillLoading ? 'wait' : 'pointer', fontSize: 13, fontWeight: 600,
-            }}>{skillLoading ? 'Analyzing...' : skillGap ? 'Re-analyze' : 'Analyze gaps'}</button>
+          <div className="mb-4 flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Based on {matches?.length || 0} job matches</p>
+            <Button variant="outline" size="sm" onClick={analyzeSkillGap} disabled={skillLoading}>
+              {skillLoading ? 'Analyzing...' : skillGap ? 'Re-analyze' : 'Analyze gaps'}
+            </Button>
           </div>
-          {skillLoading && <div style={{ textAlign: 'center', padding: 40 }}><Spinner size={24} color={C.t3} /></div>}
-          {!skillLoading && skillGap ? (
-            <div style={{ padding: 20, background: C.c1, borderRadius: 10, border: `1px solid ${C.br}`, fontSize: 14, lineHeight: 1.8, color: C.t2, whiteSpace: 'pre-wrap' }}>{skillGap}</div>
-          ) : !skillLoading && (
-            <p style={{ color: C.t3, fontSize: 14, padding: '40px 0', textAlign: 'center' }}>
-              Click "Analyze gaps" to see what skills to develop.{(!matches || matches.length === 0) && ' Run some matches first.'}
-            </p>
+          {skillLoading ? (
+            <div className="flex justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-foreground" /></div>
+          ) : skillGap ? (
+            <Card className="p-5 text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{skillGap}</Card>
+          ) : (
+            <p className="py-16 text-center text-sm text-muted-foreground">Click "Analyze gaps" to see what skills to develop.</p>
           )}
         </div>
       )}
 
-      {/* Salary */}
       {activeSection === 'salary' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <p style={{ fontSize: 13, color: C.t3, margin: 0 }}>Market rates for {profile?.role || 'your role'}</p>
-            <button onClick={loadSalary} disabled={salaryLoading} style={{
-              padding: '8px 16px', background: C.c1, border: `1px solid ${C.br}`, borderRadius: 8,
-              color: C.t1, cursor: salaryLoading ? 'wait' : 'pointer', fontSize: 13, fontWeight: 600,
-            }}>{salaryLoading ? 'Loading...' : salary ? 'Refresh' : 'Load insights'}</button>
+          <div className="mb-4 flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Market rates for {profile?.role || 'your role'}</p>
+            <Button variant="outline" size="sm" onClick={loadSalary} disabled={salaryLoading}>
+              {salaryLoading ? 'Loading...' : salary ? 'Refresh' : 'Load insights'}
+            </Button>
           </div>
-          {salaryLoading && <div style={{ textAlign: 'center', padding: 40 }}><Spinner size={24} color={C.t3} /></div>}
-          {!salaryLoading && salary && salary.sample_size >= 3 ? (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
-                {[{ label: 'Low (25th)', value: salary.percentile_25, color: C.t2 }, { label: 'Median', value: salary.median, color: C.grn }, { label: 'High (75th)', value: salary.percentile_75, color: C.t1 }].map((s) => (
-                  <div key={s.label} style={{ background: C.c1, border: `1px solid ${C.br}`, borderRadius: 8, padding: 16 }}>
-                    <div style={{ fontSize: 12, color: C.t3, marginBottom: 4 }}>{s.label}</div>
-                    <div style={{ fontSize: 20, fontWeight: 700, fontFamily: MONO, color: s.color }}>
-                      {salary.currency} {s.value >= 1000 ? `${Math.round(s.value / 1000)}K` : s.value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <SalaryChart data={salary} />
-            </>
-          ) : !salaryLoading && (
-            <p style={{ color: C.t3, fontSize: 14, padding: '40px 0', textAlign: 'center' }}>
-              {salary ? 'Not enough salary data for this role/region.' : 'Click "Load insights" to see market salary data.'}
+          {salaryLoading ? (
+            <div className="flex justify-center p-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-foreground" /></div>
+          ) : salary && salary.sample_size >= 3 ? (
+            <div className="grid grid-cols-3 gap-3">
+              {[{ label: 'Low (25th)', value: salary.percentile_25 }, { label: 'Median', value: salary.median }, { label: 'High (75th)', value: salary.percentile_75 }].map((s) => (
+                <Card key={s.label} className="p-4">
+                  <p className="text-xs text-muted-foreground">{s.label}</p>
+                  <p className="mt-1 font-mono text-xl font-bold">{salary.currency} {s.value >= 1000 ? `${Math.round(s.value / 1000)}K` : s.value}</p>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <p className="py-16 text-center text-sm text-muted-foreground">
+              {salary ? 'Not enough salary data.' : 'Click "Load insights" to see market data.'}
             </p>
           )}
         </div>

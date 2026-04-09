@@ -1,30 +1,65 @@
 import { useState } from 'react';
-import { C, MONO, FLAGS, CATS } from '../theme';
-import { db } from '../api';
-import useStore from '../store';
-import Chip from '../components/ui/Chip';
-import ScanBar from '../components/ui/ScanBar';
-import JobCard from '../components/jobs/JobCard';
-import Modal from '../components/ui/Modal';
-import Spinner from '../components/ui/Spinner';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { db } from '@/api';
+import useStore from '@/store';
+import { FLAGS, CATS } from '@/theme';
 
-const QUICK = ["Site Reliability Engineer", "Platform Engineer", "Cloud Security", "DevSecOps", "DevOps", "Infrastructure"];
+const QUICK = ['Site Reliability Engineer', 'Platform Engineer', 'Cloud Security', 'DevSecOps', 'DevOps', 'Infrastructure'];
+
+function JobCard({ job, applied, onApply, onMatch }) {
+  const [expanded, setExpanded] = useState(false);
+  const days = job.posted ? Math.max(0, Math.floor((Date.now() - new Date(job.posted)) / 864e5)) : null;
+
+  return (
+    <Card className="p-4">
+      <div className="flex gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted font-mono text-sm font-bold">
+          {job.company?.charAt(0) || '?'}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <Badge variant="outline" className="text-xs">{job.source}</Badge>
+            <span className="text-xs text-muted-foreground">{FLAGS[job.country] || '\u{1F310}'}</span>
+            {job.remote && <span className="text-xs text-muted-foreground">Remote</span>}
+            {days !== null && <span className="text-xs text-muted-foreground">{days === 0 ? 'Today' : `${days}d`}</span>}
+            {applied && <Badge variant="secondary" className="text-xs">Applied</Badge>}
+          </div>
+          <h3 className="text-sm font-semibold">{job.title}</h3>
+          <p className="text-sm text-muted-foreground">{job.company} &middot; {job.location}</p>
+          {job.salary && job.salary !== '\u2014' && (
+            <p className="mt-1 font-mono text-sm text-green-400">{job.salary}</p>
+          )}
+        </div>
+      </div>
+      {expanded && (
+        <div className="mt-3 rounded-lg border bg-background p-3 text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap max-h-80 overflow-auto">
+          {job.description || 'No description.'}
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {job.category && <Badge variant="secondary" className="text-xs font-normal">{job.category}</Badge>}
+        <div className="flex-1" />
+        <Button variant="ghost" size="sm" onClick={() => setExpanded(!expanded)}>{expanded ? 'Hide' : 'Details'}</Button>
+        <Button variant="ghost" size="sm" asChild><a href={job.url} target="_blank" rel="noreferrer">Career Page</a></Button>
+        {onMatch && <Button variant="outline" size="sm" onClick={() => onMatch(job)}>Match</Button>}
+        {onApply && <Button size="sm" onClick={() => onApply(job)}>{applied ? 'Applied' : 'Apply'}</Button>}
+      </div>
+    </Card>
+  );
+}
 
 export default function Browse() {
   const { jobs, setJobs, profile, applications, addApplication } = useStore();
-  const [search, setSearch] = useState("");
-  const [cat, setCat] = useState("All");
+  const [search, setSearch] = useState('');
+  const [cat, setCat] = useState('All');
   const [selCountries, setSelCountries] = useState([]);
   const [remoteOnly, setRemoteOnly] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState(jobs.length ? `${jobs.length} jobs` : "");
 
-  // Modals
-  const [matchJob, setMatchJob] = useState(null);
-  const [matchRes, setMatchRes] = useState("");
-  const [matchLoading, setMatchLoading] = useState(false);
-
-  const appliedIds = applications.map((a) => a.job_id);
+  const appliedIds = new Set(applications.map((a) => a.job_id));
 
   const doSearch = async () => {
     setLoading(true);
@@ -32,38 +67,24 @@ export default function Browse() {
     const all = [...(cached || []), ...(live?.jobs || [])];
     const seen = new Set();
     const unique = all.filter((j) => {
-      const k = (j.title + j.company).toLowerCase().replace(/\W/g, "");
+      const k = (j.title + j.company).toLowerCase().replace(/\W/g, '');
       if (seen.has(k)) return false;
       seen.add(k);
       return true;
     });
     unique.sort((a, b) => new Date(b.posted || 0) - new Date(a.posted || 0));
     setJobs(unique);
-    setStatus(`${unique.length} jobs`);
     setLoading(false);
   };
 
-  const doMatch = async (job) => {
-    setMatchJob(job);
-    setMatchRes("");
-    setMatchLoading(true);
-    const r = await db.callAI({
-      type: "match",
-      job: { title: job.title, company: job.company, location: job.location, desc: (job.description || "").slice(0, 800) },
-      profile,
-    });
-    setMatchRes(r?.text || "AI unavailable.");
-    setMatchLoading(false);
-  };
-
   const handleApply = async (job) => {
-    window.open(job.url, "_blank");
+    window.open(job.url, '_blank');
     await addApplication(job);
   };
 
   const filtered = jobs.filter((j) => {
-    const mc = cat === "All" || (j.category || "").toLowerCase().includes(cat.toLowerCase());
-    const ms = !search || [j.title, j.company, j.location].join(" ").toLowerCase().includes(search.toLowerCase());
+    const mc = cat === 'All' || (j.category || '').toLowerCase().includes(cat.toLowerCase());
+    const ms = !search || [j.title, j.company, j.location].join(' ').toLowerCase().includes(search.toLowerCase());
     const mr = !remoteOnly || j.remote;
     const ml = selCountries.length === 0 || selCountries.includes(j.country);
     return mc && ms && mr && ml;
@@ -71,92 +92,51 @@ export default function Browse() {
 
   return (
     <div>
-      {/* Header */}
-      <h2 style={{ color: C.t1, fontSize: 20, fontWeight: 700, marginBottom: 16 }}>Browse</h2>
-
-      {/* Search */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search jobs..."
-          onKeyDown={(e) => e.key === "Enter" && doSearch()} style={{ flex: 1, fontSize: 14, padding: "10px 14px" }} />
-        <button onClick={doSearch} disabled={loading}
-          style={{
-            padding: "0 20px", background: C.c1, color: C.t1,
-            border: `1px solid ${C.br}`, borderRadius: 8, fontSize: 13, fontWeight: 600,
-            cursor: loading ? "wait" : "pointer",
-          }}>
-          {loading ? "..." : "Search"}
-        </button>
+      <div className="mb-6 flex gap-2">
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search jobs..."
+          onKeyDown={(e) => e.key === 'Enter' && doSearch()} className="flex-1" />
+        <Button variant="outline" onClick={doSearch} disabled={loading}>
+          {loading ? '...' : 'Search'}
+        </Button>
       </div>
 
       {/* Quick filters */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-        {QUICK.map((p) => <Chip key={p} active={search === p} onClick={() => setSearch(p)}>{p}</Chip>)}
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {QUICK.map((p) => (
+          <Button key={p} variant={search === p ? 'secondary' : 'ghost'} size="sm" onClick={() => setSearch(p)}>{p}</Button>
+        ))}
       </div>
 
       {/* Categories */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-        {CATS.map((c) => <Chip key={c} active={cat === c} color={C.pur} onClick={() => setCat(c)}>{c}</Chip>)}
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {CATS.map((c) => (
+          <Button key={c} variant={cat === c ? 'secondary' : 'ghost'} size="sm" onClick={() => setCat(c)}>{c}</Button>
+        ))}
       </div>
 
-      {/* Region */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, alignItems: "center" }}>
-        <span style={{ fontSize: 10, fontFamily: MONO, color: C.t3 }}>REGION:</span>
-        {Object.entries(FLAGS).filter(([k]) => k !== "other").map(([cc, flag]) => (
-          <Chip key={cc} active={selCountries.includes(cc)} color={C.blu}
+      {/* Region + remote */}
+      <div className="mb-4 flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-muted-foreground mr-1">Region:</span>
+        {Object.entries(FLAGS).filter(([k]) => k !== 'other').map(([cc, flag]) => (
+          <Button key={cc} variant={selCountries.includes(cc) ? 'secondary' : 'ghost'} size="sm"
             onClick={() => setSelCountries((p) => p.includes(cc) ? p.filter((c) => c !== cc) : [...p, cc])}>
             {flag} {cc.toUpperCase()}
-          </Chip>
+          </Button>
         ))}
+        <Button variant={remoteOnly ? 'secondary' : 'ghost'} size="sm" onClick={() => setRemoteOnly((p) => !p)}>
+          Remote{remoteOnly ? ' \u2713' : ''}
+        </Button>
       </div>
 
-      {/* Remote & clear */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <button onClick={() => setRemoteOnly((p) => !p)}
-          style={{
-            padding: "5px 16px", fontSize: 12, border: `1px solid ${remoteOnly ? C.grn + "55" : C.br}`,
-            borderRadius: 99, background: remoteOnly ? C.grn + "15" : "transparent",
-            color: remoteOnly ? C.grn : C.t3, cursor: "pointer", fontWeight: 600, fontFamily: MONO,
-          }}>
-          {"\u{1F30D}"} Remote{remoteOnly && " \u2713"}
-        </button>
-        {(selCountries.length > 0 || remoteOnly) && (
-          <button onClick={() => { setSelCountries([]); setRemoteOnly(false); }}
-            style={{ padding: "5px 12px", fontSize: 11, border: `1px solid ${C.br}`, borderRadius: 99, background: "transparent", color: C.t3, cursor: "pointer" }}>
-            Clear
-          </button>
-        )}
-      </div>
+      {loading && <div className="h-0.5 w-full overflow-hidden rounded bg-muted mb-4"><div className="h-full w-1/3 animate-pulse bg-foreground/20 rounded" /></div>}
 
-      {loading && <ScanBar />}
-      {status && <p style={{ fontSize: 11, fontFamily: MONO, color: C.t3, margin: "0 0 12px" }}>{status} &middot; {filtered.length} showing</p>}
+      <p className="mb-4 text-xs text-muted-foreground">{jobs.length} jobs &middot; {filtered.length} showing</p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="flex flex-col gap-3">
         {filtered.map((j) => (
-          <JobCard key={j.id} job={j} applied={appliedIds.includes(j.id)} onApply={handleApply} onMatch={doMatch} />
+          <JobCard key={j.id} job={j} applied={appliedIds.has(j.id)} onApply={handleApply} onMatch={null} />
         ))}
       </div>
-
-      {/* Match modal */}
-      {matchJob && (
-        <Modal onClose={() => setMatchJob(null)}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-            <div>
-              <div style={{ fontSize: 10, fontFamily: MONO, letterSpacing: 2, color: C.pur, marginBottom: 6 }}>AI MATCH</div>
-              <h3 style={{ color: C.t1, fontSize: 16, fontWeight: 700, margin: 0 }}>{matchJob.title} &middot; {matchJob.company}</h3>
-            </div>
-            <button onClick={() => setMatchJob(null)} style={{ background: "none", border: "none", color: C.t3, cursor: "pointer", fontSize: 20 }}>
-              {"\u2715"}
-            </button>
-          </div>
-          {matchLoading ? (
-            <div style={{ textAlign: "center", padding: 40 }}><Spinner size={36} color={C.acc} /></div>
-          ) : (
-            <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.8, color: C.t2, background: C.bg, padding: 18, borderRadius: 12, border: `1px solid ${C.br}` }}>
-              {matchRes}
-            </div>
-          )}
-        </Modal>
-      )}
     </div>
   );
 }

@@ -1,24 +1,16 @@
 import { useState, useMemo } from 'react';
 import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragOverlay,
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay,
 } from '@dnd-kit/core';
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable';
+import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { C, MONO, PIPELINE_STAGES } from '../theme';
-import { db } from '../api';
-import useStore from '../store';
-import Spinner from '../components/ui/Spinner';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { db } from '@/api';
+import useStore from '@/store';
+import { PIPELINE_STAGES } from '@/theme';
 
-// ── Draggable application card ──
 function AppCard({ app, isDragging, onUpdateNotes, onInterviewPrep }) {
   const [expanded, setExpanded] = useState(false);
   const [notes, setNotes] = useState(app.notes || '');
@@ -29,9 +21,7 @@ function AppCard({ app, isDragging, onUpdateNotes, onInterviewPrep }) {
   const stage = PIPELINE_STAGES.find((s) => s.id === app.status) || PIPELINE_STAGES[0];
   const daysSince = app.stage_updated_at
     ? Math.floor((Date.now() - new Date(app.stage_updated_at)) / 864e5)
-    : app.applied_at
-    ? Math.floor((Date.now() - new Date(app.applied_at)) / 864e5)
-    : 0;
+    : app.applied_at ? Math.floor((Date.now() - new Date(app.applied_at)) / 864e5) : 0;
   const isStale = daysSince >= 7 && ['applied', 'first_call'].includes(app.status);
 
   const handlePrep = async () => {
@@ -42,372 +32,162 @@ function AppCard({ app, isDragging, onUpdateNotes, onInterviewPrep }) {
   };
 
   return (
-    <div
-      style={{
-        background: C.c1,
-        border: `1px solid ${isStale ? C.acc + '44' : C.br}`,
-        borderRadius: 12,
-        padding: 14,
-        opacity: isDragging ? 0.5 : 1,
-        cursor: 'grab',
-        animation: isDragging ? 'none' : 'up .25s ease',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: C.t1, margin: '0 0 2px', lineHeight: 1.3 }}>
-            {app.title}
-          </p>
-          <p style={{ fontSize: 12, color: C.t2, margin: 0 }}>{app.company}</p>
+    <Card className={`p-3 ${isDragging ? 'opacity-50' : ''} ${isStale ? 'border-yellow-500/30' : ''} cursor-grab`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold leading-snug">{app.title}</p>
+          <p className="text-xs text-muted-foreground">{app.company}</p>
         </div>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0, marginLeft: 8 }}>
-          {isStale && (
-            <span style={{ fontSize: 9, fontFamily: MONO, color: C.acc, background: C.acc + '15', padding: '2px 6px', borderRadius: 99 }}>
-              {daysSince}d
-            </span>
-          )}
-          {app.url && (
-            <a href={app.url} target="_blank" rel="noreferrer"
-              style={{ fontSize: 11, color: C.blu, padding: '2px 6px' }}
-              onClick={(e) => e.stopPropagation()}>
-              Open
-            </a>
-          )}
+        <div className="flex shrink-0 items-center gap-1">
+          {isStale && <Badge variant="outline" className="text-xs text-yellow-400 border-yellow-400/30">{daysSince}d</Badge>}
+          {app.url && <a href={app.url} target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:underline" onClick={(e) => e.stopPropagation()}>Open</a>}
         </div>
       </div>
-
-      {/* Meta row */}
-      <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 9, fontFamily: MONO, color: C.t3 }}>
-          {new Date(app.applied_at).toLocaleDateString()}
-        </span>
-        {app.source && (
-          <span style={{ fontSize: 9, fontFamily: MONO, color: C.t3, background: C.c2, padding: '1px 6px', borderRadius: 4 }}>
-            {app.source}
-          </span>
-        )}
-        {app.interview_date && (
-          <span style={{ fontSize: 9, fontFamily: MONO, color: C.pur, background: C.pur + '15', padding: '1px 6px', borderRadius: 4 }}>
-            Interview: {new Date(app.interview_date).toLocaleDateString()}
-          </span>
-        )}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-muted-foreground">{new Date(app.applied_at).toLocaleDateString()}</span>
+        {app.source && <Badge variant="secondary" className="text-xs font-normal">{app.source}</Badge>}
       </div>
-
-      {/* Expand toggle */}
-      <button
-        onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-        style={{
-          marginTop: 8, padding: '4px 10px', background: 'transparent',
-          border: `1px solid ${C.br}`, borderRadius: 6, color: C.t3,
-          cursor: 'pointer', fontSize: 10, fontFamily: MONO, width: '100%',
-        }}
-      >
+      <Button variant="ghost" size="sm" className="mt-2 w-full text-xs" onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}>
         {expanded ? 'Close' : 'Details'}
-      </button>
-
+      </Button>
       {expanded && (
-        <div style={{ marginTop: 10, borderTop: `1px solid ${C.br}`, paddingTop: 10 }} onClick={(e) => e.stopPropagation()}>
-          {/* Notes */}
-          <label style={{ fontSize: 9, fontFamily: MONO, color: C.t3, letterSpacing: 1, display: 'block', marginBottom: 4 }}>NOTES</label>
-          {editingNotes ? (
-            <>
-              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
-                placeholder="Notes..." style={{ resize: 'vertical', fontSize: 12, lineHeight: 1.5, marginBottom: 6 }} />
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => { onUpdateNotes(app.id, notes); setEditingNotes(false); }}
-                  style={{ padding: '4px 12px', background: C.grad, color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                  Save
-                </button>
-                <button onClick={() => { setNotes(app.notes || ''); setEditingNotes(false); }}
-                  style={{ padding: '4px 12px', background: 'transparent', color: C.t3, border: `1px solid ${C.br}`, borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>
-                  Cancel
-                </button>
-              </div>
-            </>
-          ) : (
-            <div onClick={() => setEditingNotes(true)}
-              style={{ padding: 8, background: C.bg, borderRadius: 6, border: `1px solid ${C.br}`, fontSize: 12, color: notes ? C.t2 : C.t3, cursor: 'pointer', minHeight: 28, lineHeight: 1.5 }}>
-              {notes || 'Click to add notes...'}
-            </div>
-          )}
-
-          {/* Interview prep button */}
-          {['interview', 'second_interview'].includes(app.status) && (
-            <div style={{ marginTop: 8 }}>
-              <button onClick={handlePrep} disabled={prepLoading}
-                style={{
-                  width: '100%', padding: '6px 12px', background: C.pur + '15', border: `1px solid ${C.pur}33`,
-                  borderRadius: 6, color: C.pur, cursor: prepLoading ? 'wait' : 'pointer',
-                  fontSize: 11, fontWeight: 600, fontFamily: MONO,
-                }}>
-                {prepLoading ? 'Generating prep...' : prepContent ? 'Refresh Prep' : 'Generate Interview Prep'}
-              </button>
-              {prepContent && (
-                <div style={{
-                  marginTop: 6, padding: 10, background: C.bg, borderRadius: 6, border: `1px solid ${C.pur}22`,
-                  fontSize: 11, lineHeight: 1.7, color: C.t2, whiteSpace: 'pre-wrap', maxHeight: 300, overflow: 'auto',
-                }}>
-                  {prepContent}
+        <div className="mt-2 border-t pt-2 space-y-3" onClick={(e) => e.stopPropagation()}>
+          <div>
+            <label className="text-xs text-muted-foreground">Notes</label>
+            {editingNotes ? (
+              <div className="mt-1">
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="Notes..." />
+                <div className="mt-1 flex gap-2">
+                  <Button size="sm" onClick={() => { onUpdateNotes(app.id, notes); setEditingNotes(false); }}>Save</Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setNotes(app.notes || ''); setEditingNotes(false); }}>Cancel</Button>
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* Cover letter preview */}
-          {app.cover_letter && (
-            <div style={{ marginTop: 8 }}>
-              <label style={{ fontSize: 9, fontFamily: MONO, color: C.t3, letterSpacing: 1, display: 'block', marginBottom: 4 }}>COVER LETTER</label>
-              <div style={{
-                padding: 8, background: C.bg, borderRadius: 6, border: `1px solid ${C.br}`,
-                fontSize: 11, color: C.t2, lineHeight: 1.5, maxHeight: 100, overflow: 'auto',
-              }}>
-                {app.cover_letter}
               </div>
+            ) : (
+              <div onClick={() => setEditingNotes(true)} className="mt-1 cursor-pointer rounded-md border bg-background p-2 text-sm text-muted-foreground min-h-7">
+                {notes || 'Click to add notes...'}
+              </div>
+            )}
+          </div>
+          {['interview', 'second_interview'].includes(app.status) && (
+            <div>
+              <Button variant="outline" size="sm" className="w-full" onClick={handlePrep} disabled={prepLoading}>
+                {prepLoading ? 'Generating...' : prepContent ? 'Refresh prep' : 'Generate interview prep'}
+              </Button>
+              {prepContent && <div className="mt-2 rounded-md border p-2 text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap max-h-60 overflow-auto">{prepContent}</div>}
             </div>
           )}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
-// ── Sortable wrapper ──
-function SortableAppCard({ app, onUpdateNotes, onInterviewPrep }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: app.id || app.job_id,
-    data: { app },
-  });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
+function SortableAppCard(props) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.app.id || props.app.job_id, data: { app: props.app } });
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <AppCard app={app} isDragging={isDragging} onUpdateNotes={onUpdateNotes} onInterviewPrep={onInterviewPrep} />
+    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}>
+      <AppCard {...props} isDragging={isDragging} />
     </div>
   );
 }
 
-// ── Pipeline column ──
 function PipelineColumn({ stage, apps, onUpdateNotes, onInterviewPrep }) {
   const ids = apps.map((a) => a.id || a.job_id);
-
   return (
-    <div style={{
-      minWidth: 280, flex: '1 1 280px',
-      background: C.bg, borderRadius: 10, border: `1px solid ${C.br}`,
-      display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 140px)',
-    }}>
-      {/* Column header */}
-      <div style={{
-        padding: '12px 14px', borderBottom: `1px solid ${C.br}`,
-        display: 'flex', alignItems: 'center', gap: 8,
-      }}>
-        <div style={{ width: 8, height: 8, borderRadius: 99, background: stage.color }} />
-        <span style={{ fontSize: 12, fontWeight: 700, color: C.t1 }}>{stage.label}</span>
-        <span style={{
-          fontSize: 10, fontFamily: MONO, color: stage.color, background: stage.color + '15',
-          padding: '1px 8px', borderRadius: 99, marginLeft: 'auto',
-        }}>
-          {apps.length}
-        </span>
+    <div className="flex min-w-[260px] flex-1 flex-col rounded-lg border bg-background" style={{ maxHeight: 'calc(100vh - 160px)' }}>
+      <div className="flex items-center gap-2 border-b px-3 py-2.5">
+        <div className="h-2 w-2 rounded-full" style={{ background: stage.color }} />
+        <span className="text-sm font-medium">{stage.label}</span>
+        <Badge variant="secondary" className="ml-auto text-xs">{apps.length}</Badge>
       </div>
-
-      {/* Cards */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div className="flex-1 overflow-auto p-2 space-y-2">
         <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-          {apps.map((app) => (
-            <SortableAppCard
-              key={app.id || app.job_id}
-              app={app}
-              onUpdateNotes={onUpdateNotes}
-              onInterviewPrep={onInterviewPrep}
-            />
-          ))}
+          {apps.map((app) => <SortableAppCard key={app.id || app.job_id} app={app} onUpdateNotes={onUpdateNotes} onInterviewPrep={onInterviewPrep} />)}
         </SortableContext>
-        {apps.length === 0 && (
-          <div style={{ padding: '20px 10px', textAlign: 'center' }}>
-            <p style={{ fontSize: 11, color: C.t3 }}>Drag cards here</p>
-          </div>
-        )}
+        {apps.length === 0 && <p className="p-4 text-center text-xs text-muted-foreground">Drag cards here</p>}
       </div>
     </div>
   );
 }
 
-// ── Main Tracker ──
 export default function Tracker() {
   const { applications, updateAppStatus, updateAppNotes, profile } = useStore();
   const [activeId, setActiveId] = useState(null);
-  // Default to list on mobile for better UX
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
   const [viewMode, setViewMode] = useState(isMobile ? 'list' : 'kanban');
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
-  // Group applications by stage
   const columns = useMemo(() => {
     const grouped = {};
-    for (const stage of PIPELINE_STAGES) {
-      grouped[stage.id] = applications.filter((a) => a.status === stage.id);
-    }
+    for (const stage of PIPELINE_STAGES) grouped[stage.id] = applications.filter((a) => a.status === stage.id);
     return grouped;
   }, [applications]);
 
-  // Only show columns that have apps or are key stages
-  const activeStages = PIPELINE_STAGES.filter(
-    (s) => (columns[s.id]?.length > 0) || ['applied', 'interview', 'offer'].includes(s.id)
-  );
-
-  const handleDragStart = (event) => {
-    setActiveId(event.active.id);
-  };
+  const activeStages = PIPELINE_STAGES.filter((s) => (columns[s.id]?.length > 0) || ['applied', 'interview', 'offer'].includes(s.id));
 
   const handleDragEnd = (event) => {
     setActiveId(null);
     const { active, over } = event;
     if (!over || !active) return;
-
     const draggedApp = active.data?.current?.app;
     if (!draggedApp) return;
-
-    // Find which column the item was dropped over
-    // Check if dropped over another card — find its parent column
     let targetStage = null;
     for (const stage of PIPELINE_STAGES) {
-      const stageApps = columns[stage.id] || [];
-      if (stageApps.some((a) => (a.id || a.job_id) === over.id)) {
-        targetStage = stage.id;
-        break;
-      }
+      if ((columns[stage.id] || []).some((a) => (a.id || a.job_id) === over.id)) { targetStage = stage.id; break; }
     }
-
-    // If dropped directly on the column (empty column), over.id might be the column itself
-    if (!targetStage) {
-      const matchedStage = PIPELINE_STAGES.find((s) => s.id === over.id);
-      if (matchedStage) targetStage = matchedStage.id;
-    }
-
-    if (targetStage && targetStage !== draggedApp.status) {
-      updateAppStatus(draggedApp.id, targetStage);
-    }
+    if (!targetStage) { const ms = PIPELINE_STAGES.find((s) => s.id === over.id); if (ms) targetStage = ms.id; }
+    if (targetStage && targetStage !== draggedApp.status) updateAppStatus(draggedApp.id, targetStage);
   };
 
   const handleInterviewPrep = async (app) => {
-    const res = await db.callAI({
-      type: 'interview-prep',
-      job: {
-        title: app.title,
-        company: app.company,
-        location: app.location,
-        desc: '',
-      },
-      profile,
-    });
+    const res = await db.callAI({ type: 'interview-prep', job: { title: app.title, company: app.company, location: app.location, desc: '' }, profile });
     return res?.text || null;
   };
 
-  const activeApp = activeId
-    ? applications.find((a) => (a.id || a.job_id) === activeId)
-    : null;
+  const activeApp = activeId ? applications.find((a) => (a.id || a.job_id) === activeId) : null;
 
   return (
     <div>
-      {/* Header */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-          <h2 style={{ color: C.t1, fontSize: 20, fontWeight: 700, margin: 0 }}>Tracker</h2>
-          {applications.length > 0 && (
-            <span style={{ fontSize: 13, color: C.t3 }}>{applications.length} applications</span>
-          )}
-          <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', gap: 4, borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.br}` }}>
-            {['kanban', 'list'].map((m) => (
-              <button key={m} onClick={() => setViewMode(m)}
-                style={{
-                  padding: '6px 14px', border: 'none', fontSize: 12,
-                  cursor: 'pointer', fontWeight: 500,
-                  background: viewMode === m ? C.c1 : 'transparent',
-                  color: viewMode === m ? C.t1 : C.t3,
-                }}>
-                {m === 'kanban' ? 'Board' : 'List'}
-              </button>
-            ))}
-          </div>
+      <div className="mb-6 flex items-center gap-3">
+        <h1 className="text-lg font-semibold">Tracker</h1>
+        {applications.length > 0 && <span className="text-sm text-muted-foreground">{applications.length} applications</span>}
+        <div className="flex-1" />
+        <div className="flex rounded-lg border overflow-hidden">
+          {['kanban', 'list'].map((m) => (
+            <Button key={m} variant={viewMode === m ? 'secondary' : 'ghost'} size="sm" className="rounded-none" onClick={() => setViewMode(m)}>
+              {m === 'kanban' ? 'Board' : 'List'}
+            </Button>
+          ))}
         </div>
       </div>
 
       {applications.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '80px 20px' }}>
-          <h3 style={{ color: C.t1, fontSize: 16, fontWeight: 600, marginBottom: 8 }}>No applications yet</h3>
-          <p style={{ color: C.t3, fontSize: 14 }}>
-            When you mark jobs as applied from Matches or Browse, they'll show up here.
-          </p>
+        <div className="py-20 text-center">
+          <h3 className="text-base font-medium">No applications yet</h3>
+          <p className="mt-1 text-sm text-muted-foreground">When you mark jobs as applied, they'll show up here.</p>
         </div>
       ) : viewMode === 'kanban' ? (
-        /* Kanban view */
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <div style={{
-            display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 16,
-            minHeight: 300,
-          }}>
-            {activeStages.map((stage) => (
-              <PipelineColumn
-                key={stage.id}
-                stage={stage}
-                apps={columns[stage.id] || []}
-                onUpdateNotes={updateAppNotes}
-                onInterviewPrep={handleInterviewPrep}
-              />
-            ))}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={(e) => setActiveId(e.active.id)} onDragEnd={handleDragEnd}>
+          <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: 300 }}>
+            {activeStages.map((stage) => <PipelineColumn key={stage.id} stage={stage} apps={columns[stage.id] || []} onUpdateNotes={updateAppNotes} onInterviewPrep={handleInterviewPrep} />)}
           </div>
-          <DragOverlay>
-            {activeApp ? (
-              <div style={{ opacity: 0.9, transform: 'rotate(2deg)' }}>
-                <AppCard app={activeApp} isDragging={false} onUpdateNotes={() => {}} onInterviewPrep={() => {}} />
-              </div>
-            ) : null}
-          </DragOverlay>
+          <DragOverlay>{activeApp ? <div className="rotate-1 opacity-90"><AppCard app={activeApp} isDragging={false} onUpdateNotes={() => {}} onInterviewPrep={() => {}} /></div> : null}</DragOverlay>
         </DndContext>
       ) : (
-        /* List view */
-        <div>
-          {/* Stage filter tabs */}
-          <div style={{ display: 'flex', gap: 0, marginBottom: 16, overflowX: 'auto', borderRadius: 10, border: `1px solid ${C.br}`, background: C.c1 }}>
-            {PIPELINE_STAGES.filter((s) => (columns[s.id]?.length > 0)).map((stage) => (
-              <button key={stage.id}
-                style={{
-                  padding: '8px 14px', border: 'none', fontSize: 11, fontFamily: MONO, cursor: 'default',
-                  background: 'transparent', color: stage.color, fontWeight: 700, whiteSpace: 'nowrap',
-                }}>
-                {stage.label} ({columns[stage.id]?.length || 0})
-              </button>
-            ))}
-          </div>
+        <div className="space-y-6">
           {PIPELINE_STAGES.map((stage) => {
             const apps = columns[stage.id] || [];
             if (apps.length === 0) return null;
             return (
-              <div key={stage.id} style={{ marginBottom: 20 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: 99, background: stage.color }} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: C.t1 }}>{stage.label}</span>
-                  <span style={{ fontSize: 11, fontFamily: MONO, color: C.t3 }}>({apps.length})</span>
+              <div key={stage.id}>
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full" style={{ background: stage.color }} />
+                  <span className="text-sm font-medium">{stage.label}</span>
+                  <span className="text-xs text-muted-foreground">({apps.length})</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {apps.map((app) => (
-                    <AppCard
-                      key={app.id || app.job_id}
-                      app={app}
-                      isDragging={false}
-                      onUpdateNotes={updateAppNotes}
-                      onInterviewPrep={handleInterviewPrep}
-                    />
-                  ))}
+                <div className="space-y-2">
+                  {apps.map((app) => <AppCard key={app.id || app.job_id} app={app} isDragging={false} onUpdateNotes={updateAppNotes} onInterviewPrep={handleInterviewPrep} />)}
                 </div>
               </div>
             );
