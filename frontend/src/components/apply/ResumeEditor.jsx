@@ -24,7 +24,6 @@ function ResumePDF({ content, profile }) {
     const line = lines[i].trim();
     if (!line) continue;
 
-    // Section headers (ALL CAPS or ends with :)
     if (/^[A-Z][A-Z\s&/]+:?$/.test(line) || /^#{1,3}\s/.test(line)) {
       elements.push(
         <View key={i} style={{ marginTop: elements.length > 0 ? 10 : 0 }}>
@@ -58,7 +57,6 @@ function ResumePDF({ content, profile }) {
   );
 }
 
-// HTML preview that mirrors the PDF layout
 function ResumePreview({ content, profile }) {
   const lines = content.split('\n');
 
@@ -105,16 +103,30 @@ function ResumePreview({ content, profile }) {
 }
 
 export default function ResumeEditor({ job }) {
-  const { profile } = useStore();
+  const { profile, setProfile } = useStore();
   const [suggestions, setSuggestions] = useState('');
   const [editedResume, setEditedResume] = useState(profile?.resume_text || '');
   const [analyzing, setAnalyzing] = useState(false);
   const [applying, setApplying] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [pdfEmail, setPdfEmail] = useState(profile?.email || '');
-  const [view, setView] = useState('suggestions'); // suggestions | edit | preview
+  const [view, setView] = useState('edit'); // edit | suggestions | preview
+  const [saved, setSaved] = useState(false);
 
+  // Save edited resume back to profile so AI uses the correct text
+  const saveResume = async () => {
+    await db.saveProfile({ resume_text: editedResume });
+    setProfile({ ...profile, resume_text: editedResume });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  // AI suggestions compare the user's resume (editedResume) against the JD
   const analyze = async () => {
+    if (!editedResume.trim()) {
+      setSuggestions('Paste your resume text in the Edit Resume tab first.');
+      return;
+    }
     setAnalyzing(true);
     const res = await db.callAI({
       type: 'tailor-resume',
@@ -125,7 +137,7 @@ export default function ResumeEditor({ job }) {
       },
       profile: {
         ...profile,
-        resume_text: profile?.resume_text || '',
+        resume_text: editedResume,
       },
     });
     setSuggestions(res?.text || 'Could not generate suggestions. Please try again.');
@@ -138,15 +150,17 @@ export default function ResumeEditor({ job }) {
       type: 'chat',
       messages: [{
         role: 'user',
-        content: `Rewrite this resume incorporating the tailoring suggestions below. Output ONLY the final resume text — no explanations, no markdown fences, no commentary. Use plain text with section headers in ALL CAPS, bullet points with "- ", and blank lines between sections.
+        content: `You are a professional resume writer. Rewrite the resume below by applying the tailoring suggestions. Keep the same structure and facts — do NOT invent experience. Just rephrase, reorder, and emphasize what's relevant to the target job.
+
+Output ONLY the final resume body text. No header (name/email — that's added separately). No markdown fences, no explanations. Use ALL CAPS for section headers, "- " for bullets, blank lines between sections.
 
 CURRENT RESUME:
-${editedResume || profile?.resume_text || ''}
+${editedResume}
 
 SUGGESTIONS TO APPLY:
 ${suggestions}
 
-JOB TARGET: ${job?.title} at ${job?.company}`,
+TARGET: ${job?.title} at ${job?.company}`,
       }],
       profile,
     });
@@ -184,10 +198,10 @@ JOB TARGET: ${job?.title} at ${job?.company}`,
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={analyze}
-            disabled={analyzing}
+            disabled={analyzing || !editedResume.trim()}
             style={{
               padding: '6px 16px', background: 'transparent', border: `1px solid ${C.pur}55`,
-              borderRadius: 8, color: C.pur, cursor: analyzing ? 'wait' : 'pointer',
+              borderRadius: 8, color: !editedResume.trim() ? C.t3 : C.pur, cursor: analyzing ? 'wait' : 'pointer',
               fontSize: 12, fontWeight: 600, fontFamily: MONO,
             }}
           >
@@ -215,8 +229,8 @@ JOB TARGET: ${job?.title} at ${job?.company}`,
       {/* View toggle */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 12, borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.br}` }}>
         {[
-          { id: 'suggestions', label: 'AI Suggestions' },
           { id: 'edit', label: 'Edit Resume' },
+          { id: 'suggestions', label: 'AI Suggestions' },
           { id: 'preview', label: 'Preview' },
         ].map((t) => (
           <button
@@ -234,6 +248,65 @@ JOB TARGET: ${job?.title} at ${job?.company}`,
         ))}
       </div>
 
+      {/* Edit view — this is now the default/first tab */}
+      {view === 'edit' && (
+        <>
+          {!editedResume.trim() && (
+            <div style={{
+              padding: 12, marginBottom: 10, background: C.acc + '15', border: `1px solid ${C.acc}33`,
+              borderRadius: 8, fontSize: 12, color: C.acc, lineHeight: 1.5,
+            }}>
+              Paste your resume text below. Use ALL CAPS for section headers (e.g. EXPERIENCE, EDUCATION) and "- " for bullet points. Your name/email/skills are added automatically from your profile.
+            </div>
+          )}
+          <textarea
+            value={editedResume}
+            onChange={(e) => setEditedResume(e.target.value)}
+            placeholder={`SUMMARY\nExperienced SRE with 5+ years...\n\nEXPERIENCE\nSenior SRE, Company Name (2022-Present)\n- Led migration to Kubernetes...\n- Reduced incident response time by 40%...\n\nEDUCATION\nB.Tech Computer Science, University (2018)`}
+            rows={16}
+            style={{ resize: 'vertical', lineHeight: 1.6, fontSize: 13, minHeight: 250 }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+            <p style={{ fontSize: 11, color: C.t3, fontFamily: MONO, margin: 0 }}>
+              {editedResume.split(/\s+/).filter(Boolean).length} words
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={saveResume}
+                disabled={!editedResume.trim()}
+                style={{
+                  padding: '8px 18px', background: 'transparent', border: `1px solid ${saved ? C.grn + '44' : C.br}`,
+                  borderRadius: 8, color: saved ? C.grn : C.t2, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
+                }}
+              >
+                {saved ? 'Saved!' : 'Save to Profile'}
+              </button>
+              <button
+                onClick={() => setView('preview')}
+                disabled={!editedResume.trim()}
+                style={{
+                  padding: '8px 18px', background: 'transparent', border: `1px solid ${C.br}`,
+                  borderRadius: 8, color: C.t2, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
+                }}
+              >
+                Preview
+              </button>
+              <button
+                onClick={downloadPDF}
+                disabled={downloading || !editedResume.trim()}
+                style={{
+                  padding: '8px 18px', background: C.grn + '22', border: `1px solid ${C.grn}44`,
+                  borderRadius: 8, color: C.grn, cursor: downloading ? 'wait' : 'pointer',
+                  fontSize: 12, fontWeight: 600, fontFamily: MONO,
+                }}
+              >
+                {downloading ? 'Creating PDF...' : 'Download PDF'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Suggestions view */}
       {view === 'suggestions' && (
         <>
@@ -241,7 +314,7 @@ JOB TARGET: ${job?.title} at ${job?.company}`,
             <div style={{ textAlign: 'center', padding: 30 }}>
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
               <p style={{ color: C.t3, fontSize: 12, marginTop: 10 }}>
-                Analyzing your resume against this job...
+                Comparing your resume to this job description...
               </p>
             </div>
           ) : suggestions ? (
@@ -262,61 +335,18 @@ JOB TARGET: ${job?.title} at ${job?.company}`,
                   cursor: applying ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
                 }}
               >
-                {applying ? 'Applying suggestions...' : 'Apply Suggestions to Resume'}
+                {applying ? 'Rewriting resume...' : 'Apply Suggestions to Resume'}
               </button>
             </>
           ) : (
             <div style={{ textAlign: 'center', padding: '30px 20px' }}>
               <p style={{ color: C.t3, fontSize: 13, lineHeight: 1.6 }}>
-                Click "Get Suggestions" to see how to tailor your resume for this role.
+                {editedResume.trim()
+                  ? `Click "Get Suggestions" to compare your resume against this ${job?.title || 'role'} at ${job?.company || 'company'}.`
+                  : 'Paste your resume in the Edit Resume tab first, then come back for AI suggestions.'}
               </p>
-              {!profile?.resume_text && (
-                <p style={{ color: C.acc, fontSize: 12, marginTop: 8 }}>
-                  Upload your resume in Profile for better suggestions.
-                </p>
-              )}
             </div>
           )}
-        </>
-      )}
-
-      {/* Edit view */}
-      {view === 'edit' && (
-        <>
-          <textarea
-            value={editedResume}
-            onChange={(e) => setEditedResume(e.target.value)}
-            placeholder="Paste or edit your resume text here. Use ALL CAPS for section headers, - for bullets."
-            rows={16}
-            style={{ resize: 'vertical', lineHeight: 1.6, fontSize: 13, minHeight: 250 }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-            <p style={{ fontSize: 11, color: C.t3, fontFamily: MONO, margin: 0 }}>
-              {editedResume.split(/\s+/).filter(Boolean).length} words
-            </p>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={() => setView('preview')}
-                style={{
-                  padding: '8px 18px', background: 'transparent', border: `1px solid ${C.br}`,
-                  borderRadius: 8, color: C.t2, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: MONO,
-                }}
-              >
-                Preview
-              </button>
-              <button
-                onClick={downloadPDF}
-                disabled={downloading || !editedResume.trim()}
-                style={{
-                  padding: '8px 18px', background: C.grn + '22', border: `1px solid ${C.grn}44`,
-                  borderRadius: 8, color: C.grn, cursor: downloading ? 'wait' : 'pointer',
-                  fontSize: 12, fontWeight: 600, fontFamily: MONO,
-                }}
-              >
-                {downloading ? 'Creating PDF...' : 'Download as PDF'}
-              </button>
-            </div>
-          </div>
         </>
       )}
 
@@ -345,13 +375,13 @@ JOB TARGET: ${job?.title} at ${job?.company}`,
                     fontSize: 12, fontWeight: 600, fontFamily: MONO,
                   }}
                 >
-                  {downloading ? 'Creating PDF...' : 'Download as PDF'}
+                  {downloading ? 'Creating PDF...' : 'Download PDF'}
                 </button>
               </div>
             </>
           ) : (
             <div style={{ textAlign: 'center', padding: '30px 20px' }}>
-              <p style={{ color: C.t3, fontSize: 13 }}>No resume content to preview. Switch to Edit to add text.</p>
+              <p style={{ color: C.t3, fontSize: 13 }}>No resume content to preview. Switch to Edit to paste your resume.</p>
             </div>
           )}
         </>
