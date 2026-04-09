@@ -46,6 +46,19 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: node scrape.js
 
+      - name: 🤖 Trigger AI matching for all users
+        if: success()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          echo "Triggering match-jobs for all active users..."
+          # The match-jobs function handles per-user matching when called with service key
+          curl -s -X POST "$SUPABASE_URL/functions/v1/match-jobs" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"trigger": "scraper"}' || echo "Match trigger skipped (function may not be deployed yet)"
+
       - name: 📊 Summary
         if: always()
         run: echo "Scrape completed at $(date -u)"

@@ -1,0 +1,1 @@
+- [FLINT pivot to AI agent](project_pivot_agent.md) — Pivoting from job board to AI agent model, phase 1 done, phases 2-4 pending
