@@ -89,9 +89,11 @@ export default function JobCard({ job, applied, onApply, onMatch, compact = fals
         {onApply && (
           <button onClick={() => onApply(job)}
             style={{
-              padding: "8px 20px", background: applied ? C.grn + "22" : C.grad,
-              color: applied ? C.grn : "#fff", border: "none", borderRadius: 8,
-              fontSize: 12, fontWeight: 700, cursor: "pointer",
+              padding: "8px 20px",
+              background: applied ? C.grn + "15" : C.t1,
+              color: applied ? C.grn : C.bg,
+              border: applied ? `1px solid ${C.grn}33` : "none", borderRadius: 8,
+              fontSize: 12, fontWeight: 600, cursor: "pointer",
             }}>
             {applied ? "Applied" : "Apply"}
           </button>

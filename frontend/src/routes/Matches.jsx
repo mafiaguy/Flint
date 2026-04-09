@@ -112,7 +112,7 @@ export default function Matches() {
           )}
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(400px, 1fr))", gap: 10 }}>
           {filtered.map((m) => (
             <MatchCard key={m.id} match={m} />
           ))}

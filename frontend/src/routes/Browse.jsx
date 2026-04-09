@@ -71,16 +71,20 @@ export default function Browse() {
 
   return (
     <div style={{ padding: "24px 32px 60px" }}>
+      {/* Header */}
+      <h2 style={{ color: C.t1, fontSize: 20, fontWeight: 700, marginBottom: 16 }}>Browse</h2>
+
       {/* Search */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search..."
-          onKeyDown={(e) => e.key === "Enter" && doSearch()} style={{ flex: 1, fontSize: 15, padding: "13px 16px" }} />
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search jobs..."
+          onKeyDown={(e) => e.key === "Enter" && doSearch()} style={{ flex: 1, fontSize: 14, padding: "10px 14px" }} />
         <button onClick={doSearch} disabled={loading}
           style={{
-            padding: "0 22px", background: loading ? C.c2 : C.grad, color: loading ? C.t3 : "#fff",
-            border: "none", borderRadius: 8, fontSize: 14, fontWeight: 800, cursor: loading ? "wait" : "pointer",
+            padding: "0 20px", background: C.c1, color: C.t1,
+            border: `1px solid ${C.br}`, borderRadius: 8, fontSize: 13, fontWeight: 600,
+            cursor: loading ? "wait" : "pointer",
           }}>
-          SEARCH
+          {loading ? "..." : "Search"}
         </button>
       </div>
 
