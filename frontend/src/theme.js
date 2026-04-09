@@ -55,8 +55,8 @@ export const PIPELINE_STAGES = [
 ];
 
 export const globalCSS = `
-::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:#08080c}::-webkit-scrollbar-thumb{background:#1c1c2a;border-radius:3px}
-::selection{background:rgba(245,158,11,.2);color:#f59e0b}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:${C.bg}}::-webkit-scrollbar-thumb{background:${C.br};border-radius:3px}
+::selection{background:${C.acc}33;color:${C.acc}}
 @keyframes up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 @keyframes scan{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -65,11 +65,12 @@ export const globalCSS = `
 *{box-sizing:border-box;margin:0;padding:0}
 html{overflow-x:hidden}
 body{font-family:system-ui,-apple-system,sans-serif;background:${C.bg};color:${C.t1};-webkit-font-smoothing:antialiased;overflow-x:hidden;min-height:100vh;min-height:100dvh}
-input,textarea,select{font-family:inherit;color:#eeeef2;background:#0e0e14;border:1px solid #1c1c2a;border-radius:8px;padding:10px 14px;font-size:16px;outline:none;width:100%;box-sizing:border-box;caret-color:#f59e0b}
-input::placeholder,textarea::placeholder{color:#4e4e5a}
-input:focus,textarea:focus{border-color:rgba(245,158,11,.3)}
-a{color:#3b82f6;text-decoration:none}
+input,textarea,select{font-family:inherit;color:${C.t1};background:${C.c1};border:1px solid ${C.br};border-radius:8px;padding:10px 14px;font-size:16px;outline:none;width:100%;box-sizing:border-box;caret-color:${C.acc}}
+input::placeholder,textarea::placeholder{color:${C.t3}}
+input:focus,textarea:focus{border-color:${C.acc}44}
+a{color:${C.blu};text-decoration:none}
 button{-webkit-tap-highlight-color:transparent}
+.match-card:hover{border-color:${C.t3}44 !important}
 @media(max-width:480px){
   .kanban-scroll{-webkit-overflow-scrolling:touch}
   input,textarea,select{font-size:16px}

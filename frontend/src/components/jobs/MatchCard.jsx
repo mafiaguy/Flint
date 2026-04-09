@@ -18,8 +18,7 @@ export default function MatchCard({ match }) {
         cursor: "pointer", transition: "border-color .15s",
         display: "flex", gap: 14, alignItems: "flex-start",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = C.t3 + "44")}
-      onMouseLeave={(e) => (e.currentTarget.style.borderColor = C.br)}
+      className="match-card"
     >
       {/* Score */}
       <div style={{

@@ -3,9 +3,11 @@
 import { create } from 'zustand';
 import { sb, db } from './api';
 
+let _dataLoaded = false;
+
 const useStore = create((set, get) => ({
   // Auth
-  user: undefined, // undefined = loading, null = not logged in, object = logged in
+  user: undefined,
   profile: null,
 
   // Data
@@ -20,19 +22,33 @@ const useStore = create((set, get) => ({
   // ── Auth actions ──
   initAuth: () => {
     sb.auth.getSession().then(({ data: { session } }) => {
-      set({ user: session?.user || null });
-      if (session?.user) get().loadData();
+      const user = session?.user || null;
+      set({ user });
+      if (user && !_dataLoaded) {
+        _dataLoaded = true;
+        get().loadData();
+      }
     });
 
-    const { data: { subscription } } = sb.auth.onAuthStateChange((_, session) => {
-      set({ user: session?.user || null });
-      if (session?.user) get().loadData();
+    const { data: { subscription } } = sb.auth.onAuthStateChange((event, session) => {
+      const user = session?.user || null;
+      const prevUser = get().user;
+      set({ user });
+      // Only load data on actual sign-in, not duplicate events
+      if (user && !prevUser) {
+        _dataLoaded = true;
+        get().loadData();
+      }
+      if (!user && prevUser) {
+        _dataLoaded = false;
+      }
     });
 
     return () => subscription.unsubscribe();
   },
 
   signOut: async () => {
+    _dataLoaded = false;
     await sb.auth.signOut();
     set({ user: null, profile: null, jobs: [], matches: [], applications: [], qa: [] });
   },
@@ -46,13 +62,7 @@ const useStore = create((set, get) => ({
       db.getJobs(),
       db.getMatches(),
     ]);
-    set({
-      profile: profile || null,
-      qa,
-      applications: apps,
-      jobs,
-      matches,
-    });
+    set({ profile: profile || null, qa, applications: apps, jobs, matches });
   },
 
   loadMatches: async () => {
@@ -61,7 +71,6 @@ const useStore = create((set, get) => ({
     set({ matches, loading: false });
   },
 
-  // Trigger AI matching then reload results
   refreshMatches: async () => {
     set({ loading: true });
     await db.matchJobs();
@@ -82,7 +91,7 @@ const useStore = create((set, get) => ({
 
   // ── Applications ──
   addApplication: async (job, cover = "", mode = "manual") => {
-    const { data: { user } } = await sb.auth.getUser();
+    const user = get().user;
     if (!user) return;
 
     const app = {
@@ -98,11 +107,12 @@ const useStore = create((set, get) => ({
       user_id: user.id,
     };
 
-    await sb.from("applications").insert(app);
+    // Get the returned row with its generated id
+    const { data } = await sb.from("applications").insert(app).select().single();
 
     if (mode === "auto") await db.queueApply(job, cover);
 
-    set((s) => ({ applications: [app, ...s.applications] }));
+    set((s) => ({ applications: [data || app, ...s.applications] }));
   },
 
   updateAppStatus: async (id, status, extra = {}) => {

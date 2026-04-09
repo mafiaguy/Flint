@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { C, MONO } from '../theme';
 import { db } from '../api';
 import useStore from '../store';
@@ -47,10 +47,13 @@ export default function Profile() {
   const [salary, setSalary] = useState(null);
   const [salaryLoading, setSalaryLoading] = useState(false);
 
-  const handleFieldChange = (key, value) => {
+  // Debounce profile saves — update local state immediately, save to DB after 800ms
+  const saveTimerRef = useRef(null);
+  const handleFieldChange = useCallback((key, value) => {
     setProfile({ ...profile, [key]: value });
-    db.saveProfile({ [key]: value });
-  };
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => db.saveProfile({ [key]: value }), 800);
+  }, [profile, setProfile]);
 
   const handleResumeUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -177,7 +180,7 @@ export default function Profile() {
 
       {/* Skill gap */}
       {activeSection === 'skills' && (
-        <div style={{ maxWidth: 700 }}>
+        <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <p style={{ fontSize: 13, color: C.t3, margin: 0 }}>Based on {matches?.length || 0} job matches</p>
             <button onClick={analyzeSkillGap} disabled={skillLoading} style={{
@@ -198,7 +201,7 @@ export default function Profile() {
 
       {/* Salary */}
       {activeSection === 'salary' && (
-        <div style={{ maxWidth: 700 }}>
+        <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <p style={{ fontSize: 13, color: C.t3, margin: 0 }}>Market rates for {profile?.role || 'your role'}</p>
             <button onClick={loadSalary} disabled={salaryLoading} style={{

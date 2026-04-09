@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { pdf, Document, Page, Text, View, StyleSheet, Font } from '@react-pdf/renderer';
+import { pdf, Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import { C, MONO } from '../../theme';
 import { db } from '../../api';
 import useStore from '../../store';

@@ -94,11 +94,7 @@ export default function Onboarding() {
           };
           await saveProfile(profileData);
 
-          // If resume was uploaded, trigger text extraction
-          if (profile?.resume_url) {
-            db.parseResume(profile.resume_url);
-          }
-
+          // Resume parsing already triggered during upload (handleResumeUpload)
           // Brief pause to show the summary, then navigate
           setTimeout(() => navigate("/matches"), 2000);
         }

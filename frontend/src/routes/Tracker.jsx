@@ -375,7 +375,7 @@ export default function Tracker() {
         </DndContext>
       ) : (
         /* List view */
-        <div style={{ maxWidth: 660, margin: '0 auto' }}>
+        <div>
           {/* Stage filter tabs */}
           <div style={{ display: 'flex', gap: 0, marginBottom: 16, overflowX: 'auto', borderRadius: 10, border: `1px solid ${C.br}`, background: C.c1 }}>
             {PIPELINE_STAGES.filter((s) => (columns[s.id]?.length > 0)).map((stage) => (
