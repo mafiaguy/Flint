@@ -139,8 +139,7 @@ serve(async (req) => {
     // If no user_id in body, try to get from JWT
     if (!userId && authHeader) {
       const token = authHeader.replace("Bearer ", "");
-      const anonSb = createClient(SUPABASE_URL, token);
-      const { data: { user } } = await anonSb.auth.getUser();
+      const { data: { user }, error: authErr } = await sb.auth.getUser(token);
       userId = user?.id || null;
     }
 
@@ -173,11 +172,23 @@ serve(async (req) => {
       .order("posted", { ascending: false })
       .limit(200);
 
-    // Filter by preferred regions if set
-    if (profile.preferred_regions?.length > 0) {
-      // Include remote jobs + preferred regions
-      const regions = [...profile.preferred_regions];
-      jobQuery = jobQuery.in("country", regions);
+    // Filter by preferred regions if set (also always include remote jobs)
+    const wantedRegions = (profile.preferred_regions || []).filter(
+      (r: string) => r !== "remote"
+    );
+    const wantRemote = (profile.preferred_regions || []).includes("remote");
+
+    if (wantedRegions.length > 0) {
+      if (wantRemote) {
+        // Include jobs from preferred countries OR any remote job
+        jobQuery = jobQuery.or(
+          `country.in.(${wantedRegions.map((r: string) => `"${r}"`).join(",")}),remote.eq.true`
+        );
+      } else {
+        jobQuery = jobQuery.in("country", wantedRegions);
+      }
+    } else if (wantRemote) {
+      jobQuery = jobQuery.eq("remote", true);
     }
 
     const { data: allJobs, error: jobsErr } = await jobQuery;

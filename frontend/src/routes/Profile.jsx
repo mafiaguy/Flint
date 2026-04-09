@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { db } from '@/api';
 import useStore from '@/store';
+import { FLAGS, CATS } from '@/theme';
 
 export default function Profile() {
   const { profile, setProfile, matches, qa, addQA, deleteQA } = useStore();
@@ -52,6 +53,21 @@ export default function Profile() {
     setSalaryLoading(false);
   };
 
+  const REGION_OPTIONS = [
+    { code: 'in', label: 'India' }, { code: 'gb', label: 'UK' }, { code: 'de', label: 'Germany' },
+    { code: 'fr', label: 'France' }, { code: 'us', label: 'USA' }, { code: 'ca', label: 'Canada' },
+    { code: 'au', label: 'Australia' }, { code: 'ie', label: 'Ireland' }, { code: 'sg', label: 'Singapore' },
+    { code: 'ch', label: 'Switzerland' }, { code: 'remote', label: 'Remote' },
+  ];
+
+  const ROLE_OPTIONS = CATS.filter((c) => c !== 'All');
+
+  const togglePref = (key, value) => {
+    const current = profile?.[key] || [];
+    const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+    handleFieldChange(key, next);
+  };
+
   const fields = [
     { key: 'name', label: 'Name' },
     { key: 'role', label: 'Target role', placeholder: 'Senior SRE' },
@@ -90,8 +106,42 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* Right: resume + Q&A */}
+          {/* Right: preferences + resume + Q&A */}
           <div>
+            <h3 className="mb-4 text-sm font-medium text-muted-foreground">Preferred Regions</h3>
+            <div className="mb-6 flex flex-wrap gap-1.5">
+              {REGION_OPTIONS.map(({ code, label }) => {
+                const active = (profile?.preferred_regions || []).includes(code);
+                return (
+                  <Badge
+                    key={code}
+                    variant={active ? 'default' : 'outline'}
+                    className={`cursor-pointer select-none ${active ? '' : 'opacity-50 hover:opacity-80'}`}
+                    onClick={() => togglePref('preferred_regions', code)}
+                  >
+                    {FLAGS[code] || ''} {label}
+                  </Badge>
+                );
+              })}
+            </div>
+
+            <h3 className="mb-4 text-sm font-medium text-muted-foreground">Preferred Roles</h3>
+            <div className="mb-6 flex flex-wrap gap-1.5">
+              {ROLE_OPTIONS.map((role) => {
+                const active = (profile?.preferred_roles || []).includes(role);
+                return (
+                  <Badge
+                    key={role}
+                    variant={active ? 'default' : 'outline'}
+                    className={`cursor-pointer select-none ${active ? '' : 'opacity-50 hover:opacity-80'}`}
+                    onClick={() => togglePref('preferred_roles', role)}
+                  >
+                    {role}
+                  </Badge>
+                );
+              })}
+            </div>
+
             <h3 className="mb-4 text-sm font-medium text-muted-foreground">Resume</h3>
             <Card className={`mb-6 p-4 ${profile?.resume_url ? 'border-green-500/30' : ''}`}>
               <p className="mb-2 text-sm text-muted-foreground">
